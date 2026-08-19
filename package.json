@@ -1,0 +1,38 @@
+{
+  "name": "dags-solid-js",
+  "private": true,
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build:cdk": "pnpm --filter dags-solid-cdk build",
+    "test": "vitest",
+    "lint": "oxlint -A all -D no-debugger -D no-unused-vars -W eqeqeq ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@11.17.0",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.17.0",
+      "onFail": "download"
+    }
+  },
+  "type": "module",
+  "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/parser": "^7.29.8",
+    "@rollup/plugin-babel": "^7.1.0",
+    "@types/jsdom": "^28.0.3",
+    "babel-preset-solid": "^1.9.12",
+    "jsdom": "^29.1.1",
+    "magic-string": "^1.1.0",
+    "solid-js": "^1.9.13",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vite-plugin-solid": "^2.11.12",
+    "vitest": "^4.1.9"
+  }
+}

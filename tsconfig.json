@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "isolatedDeclarations": true,
+    "noImplicitOverride": true,
+    "types": [],
+  },
+
+  "references": [
+    { "path": "./packages/dags-solid-cdk/tsconfig.json" },
+    { "path": "./packages/dags-solid-material/tsconfig.json" },
+    { "path": "./tsconfig.test.json" }
+  ]
+}

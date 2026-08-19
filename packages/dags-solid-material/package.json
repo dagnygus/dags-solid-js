@@ -1,0 +1,24 @@
+{
+  "name": "dags-solid-material",
+  "version": "0.0.1",
+  "type": "module",
+
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+
+  "files": ["dist"],
+
+  "scripts": {
+    "build": "vite build && pnpm types",
+    "types": "tsc -p tsconfig.json --emitDeclarationOnly"
+  },
+
+  "peerDependencies": {
+    "solid-js": "^1.9.0"
+  },
+
+  "dependencies": {
+    "dags-solid-cdk": "workspace:*"
+  }
+}

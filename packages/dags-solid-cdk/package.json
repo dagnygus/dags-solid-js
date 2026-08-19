@@ -1,0 +1,86 @@
+{
+  "name": "dags-solid-cdk",
+  "version": "0.0.1",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "scripts": {
+    "build": "pnpm types && pnpm build:browser && pnpm build:server",
+    "build:browser": "vite build --mode browser",
+    "build:server": "vite build --mode server",
+    "types": "tsc -p tsconfig.json --emitDeclarationOnly"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.0"
+  },
+  "exports": {
+    "./signals": {
+      "types": "./dist/types/signals/signals.d.ts",
+      "browser": {
+        "import": "./dist/browser/signals/signals.mjs",
+        "require": "./dist/browser/signals/signals.cjs"
+      },
+      "node": {
+        "import": "./dist/server/signals/signals.mjs",
+        "require": "./dist/server/signals/signals.cjs"
+      },
+      "deno": {
+        "import": "./dist/server/signals/signals.mjs",
+        "require": "./dist/server/signals/signals.cjs"
+      },
+      "default": "./dist/server/signals/signals.mjs"
+    },
+    "./platform": {
+      "types": "./dist/types/platform/platform.d.ts",
+      "browser": {
+        "import": "./dist/browser/platform/platform.mjs",
+        "require": "./dist/browser/platform/platform.cjs"
+      },
+      "node": {
+        "import": "./dist/server/platform/platform.mjs",
+        "require": "./dist/server/platform/platform.cjs"
+      },
+      "deno": {
+        "import": "./dist/server/platform/platform.mjs",
+        "require": "./dist/server/platform/platform.cjs"
+      },
+      "default": "./dist/server/platform/platform.mjs"
+    },
+    "./observers": {
+      "types": "./dist/types/observers/observers.d.ts",
+      "browser": {
+        "import": "./dist/browser/observers/observers.mjs",
+        "require": "./dist/browser/observers/observers.cjs"
+      },
+      "node": {
+        "import": "./dist/server/observers/observers.mjs",
+        "require": "./dist/server/observers/observers.cjs"
+      },
+      "deno": {
+        "import": "./dist/server/observers/observers.mjs",
+        "require": "./dist/server/observers/observers.cjs"
+      },
+      "default": "./dist/server/observers/observers.mjs"
+    },
+    "./eventDelegation": {
+      "types": "./dist/types/event-delegation/event-delegation.d.ts",
+      "browser": {
+        "import": "./dist/browser/event-delegation/event-delegation.mjs",
+        "require": "./dist/browser/event-delegation/event-delegation.cjs"
+      },
+      "node": {
+        "import": "./dist/server/event-delegation/event-delegation.mjs",
+        "require": "./dist/server/event-delegation/event-delegation.cjs"
+      },
+      "deno": {
+        "import": "./dist/server/event-delegation/event-delegation.mjs",
+        "require": "./dist/server/event-delegation/event-delegation.cjs"
+      },
+      "default": "./dist/server/event-delegation/event-delegation.mjs"
+    }
+  }
+}

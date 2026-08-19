@@ -1,0 +1,2 @@
+/** @internal */
+declare const __IS_SERVER__: boolean;

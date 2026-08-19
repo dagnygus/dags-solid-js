@@ -1,0 +1,22 @@
+{
+    "extends": "../../tsconfig.json",
+    "compilerOptions": {
+        "composite": true,
+        "types": ["./globals.d.ts"],
+        "outDir": "dist/types",
+        "skipLibCheck": true,
+        "stripInternal": true,
+        "rootDir": "src"
+    },
+
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.tsx"
+    ],
+    "exclude": [
+        "src/**/*.spec.ts",
+        "src/**/*.spec.tsx",
+        "node_modules",
+        "src/test-utils",
+    ]
+}

@@ -1,0 +1,1 @@
+export function helloMaterial() { return 'hello material'; }
