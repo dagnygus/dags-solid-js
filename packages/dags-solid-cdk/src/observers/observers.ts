@@ -6,7 +6,7 @@
  * Not part of the public API.
  */
 
-import { Accessor, createComputed, createMemo, createSignal, getOwner, onCleanup, onMount, Setter } from "solid-js";
+import { Accessor, createComputed, createMemo, createSignal, getOwner, onCleanup, onMount, Setter, Signal } from "solid-js";
 import { isDev } from "solid-js/web";
 import { _cancelTask, _createTaskObject, _scheduleAsapTask, _scheduleConcurrentTask, _Task } from "../internals/schedulers";
 
@@ -237,6 +237,7 @@ let _shadowDiscoverRecords: CdkMutationRecord[] | null = null;
 let _shadowDiscoverTask: _Task | null = null;
 let _dispatchingMutations = false;
 let _startTime = 0;
+let _scanningDisabled = false;
 
 let _resizableElements: WeakMap<Node, [_SetterList<ResizeObserverEntry | null>, number]> = null!;
 let _resizeObserver: ResizeObserver | null = null;
@@ -323,7 +324,7 @@ function _unlinkSetter<T>(list: _SetterList<T>, setterRef: _SetterRef<T>): void 
     
         setterRef.next = null;
         setterRef.prev = null;
-        setterRef.linked = false
+        setterRef.linked = false;
     }
 }
 
@@ -605,7 +606,7 @@ function _scanForRemove(list: ArrayLike<Node> & Iterable<Node>): void {
 
     let i = 0;
 
-    while (i < length && performance.now() - startTime < 12) {
+    while (i < length && (_scanningDisabled || performance.now() - startTime < 12)) {
         const node = list[i]
         _mutableShadowHosts && _removeShadow(node);
         _removeSetters(node)
@@ -639,13 +640,14 @@ function _scanForRemove(list: ArrayLike<Node> & Iterable<Node>): void {
 
 function _dispatchMutationRecords(records: CdkMutationRecord[]) {
     if (!_mutableElementSetters) { return; }
+    const scanningEnabled = !_scanningDisabled;
 
     _dispatchingMutations = true;
     _startTime = performance.now();
 
      for (const record of records) {
         if (record.type !== 'shadowDiscover') {
-            if (record.addedNodes.length) {
+            if (scanningEnabled && record.addedNodes.length) {
                 _scanForShadows(record.addedNodes);
             }
     
@@ -709,6 +711,7 @@ function _initializeMutationObserver(): void {
         _dispatchMutationRecords(records);
     });
     _mutationObserver.observe(document, _mutableObserverOptions ??= { attributes: true, childList: true, subtree: true, characterData: true });
+    if (_scanningDisabled) { return; }
     _aggregateShadows(document);
 }
 
@@ -738,6 +741,29 @@ function _finalizeMutationObserver(): void {
     }
 }
 
+/** @internal */
+export function _enableScanning(): void {
+    _scanningDisabled = false;
+}
+
+/**
+ * Disables automatic scanning of the DOM for Shadow DOM roots.
+ *
+ * When disabled, the library does not scan newly added elements for
+ * open shadow roots and therefore does not automatically observe mutations
+ * occurring inside those shadow roots.
+ *
+ * This is useful for applications that do not use Shadow DOM and want to
+ * avoid the background work associated with discovering shadow roots.
+ *
+ * @remarks
+ * This setting affects Shadow DOM discovery globally and should be configured
+ * before creating mutation observers.
+ */
+export function disableShadowDomScanning(): void {
+    _scanningDisabled = true
+}
+
 /**
  * Creates a reactive accessor that observes mutations affecting the provided
  * element and its descendants.
@@ -760,6 +786,11 @@ function _finalizeMutationObserver(): void {
  *
  * After discovery, mutations occurring within the shadow root are observed
  * normally.
+ * 
+ * Automatic Shadow DOM scanning can be disabled with
+ * {@link disableShadowDomScanning}. When disabled, shadow roots are not
+ * discovered automatically and mutations occurring within them are not
+ * observed.
  *
  * The returned accessor initially returns `null` and updates whenever one or
  * more mutation records are emitted.
@@ -769,6 +800,7 @@ function _finalizeMutationObserver(): void {
  * @returns A reactive accessor that initially returns `null` and subsequently
  * returns arrays of mutation records affecting the observed target.
  *
+ * @see {@link disableShadowDomScanning}
  * @see {@link observeBatchedMutations}
  */
 export function observerMutations(element: Element): Accessor<readonly CdkMutationRecord[] | null>;
@@ -794,6 +826,11 @@ export function observerMutations(element: Element): Accessor<readonly CdkMutati
  *
  * After discovery, mutations occurring within the shadow root are observed
  * normally.
+ * 
+ * Automatic Shadow DOM scanning can be disabled with
+ * {@link disableShadowDomScanning}. When disabled, shadow roots are not
+ * discovered automatically and mutations occurring within them are not
+ * observed.
  *
  * The returned accessor initially returns `null` and updates whenever one or
  * more mutation records are emitted.
@@ -803,6 +840,7 @@ export function observerMutations(element: Element): Accessor<readonly CdkMutati
  * @returns A reactive accessor that initially returns `null` and subsequently
  * returns arrays of mutation records affecting the observed target.
  * 
+ * @see {@link disableShadowDomScanning}
  * @see {@link observeBatchedMutations}
  */
 export function observerMutations(document: Document): Accessor<readonly CdkMutationRecord[] | null>;
@@ -828,6 +866,11 @@ export function observerMutations(document: Document): Accessor<readonly CdkMuta
  *
  * After discovery, mutations occurring within the shadow root are observed
  * normally.
+ * 
+ * Automatic Shadow DOM scanning can be disabled with
+ * {@link disableShadowDomScanning}. When disabled, shadow roots are not
+ * discovered automatically and mutations occurring within them are not
+ * observed.
  *
  * The element may be provided lazily using a getter. If the getter does not
  * return an element immediately, the library retries after the owning component
@@ -843,6 +886,7 @@ export function observerMutations(document: Document): Accessor<readonly CdkMuta
  * @returns A reactive accessor that initially returns `null` and subsequently
  * returns arrays of mutation records affecting the observed target.
  * 
+ * @see {@link disableShadowDomScanning}
  * @see {@link observeBatchedMutations}
  */
 export function observerMutations(elementGetter: () => Element): Accessor<readonly CdkMutationRecord[] | null>;
@@ -869,6 +913,11 @@ export function observerMutations(elementGetter: () => Element): Accessor<readon
  * After discovery, mutations occurring within the shadow root are observed
  * normally.
  * 
+ * Automatic Shadow DOM scanning can be disabled with
+ * {@link disableShadowDomScanning}. When disabled, shadow roots are not
+ * discovered automatically and mutations occurring within them are not
+ * observed.
+ * 
  * When a function is provided, the target is obtained from the function.
  * Observation starts when the function returns an Element. If the getter does not
  * return an element immediately, the library retries after the owning component
@@ -882,6 +931,7 @@ export function observerMutations(elementGetter: () => Element): Accessor<readon
  * @returns A reactive accessor that initially returns `null` and subsequently
  * returns arrays of mutation records affecting the observed target.
  * 
+ * @see {@link disableShadowDomScanning}
  * @see {@link observeBatchedMutations}
  */
 export function observerMutations(target: Document | Element | (() => Element)): Accessor<readonly CdkMutationRecord[] | null>;
@@ -902,14 +952,22 @@ export function observerMutations(target: any, caller: Function = observerMutati
     if (element) {
         return _observeMutations(element);
     } else {
-        const [mutation, setMutation] = createSignal<readonly CdkMutationRecord[] | null>(null);
+        let onMouthSignal: Signal<boolean> | null = createSignal(false);
+        let mutation:  Accessor<readonly CdkMutationRecord[] | null> | null = null
         onMount(() => {
             element = target() as Element;
             isDev && _assertValidObservationTarget(element, true, false, caller);
-            const getter = _observeMutations(element);
-            createComputed(() => setMutation(getter()));
+            mutation = _observeMutations(element);
+            onMouthSignal![1](true);
+            onMouthSignal = null;
         });
-        return mutation;
+
+        return () => {
+            if (onMouthSignal) {
+                onMouthSignal[0]();
+            }
+            return mutation ? mutation() : null;
+        }
     }
 }
 
@@ -1169,14 +1227,22 @@ export function observeResizing(target: Element | (() => Element) | ObserveEleme
     if (element) {
         return _observeResizing(element, watch, options);
     } else {
-        const [entry, setEntry] = createSignal<ResizeObserverEntry | null>(null);
+        isDev && !getOwner() && _assertValidObservationTarget(element, false, false, observeResizing);
+        let onMouthSignal: Signal<boolean> | null = createSignal(false);
+        let entry: Accessor<ResizeObserverEntry | null> | null = null;
+        
         onMount(() => {
             element = elGetter()!;
             isDev && _assertValidObservationTarget(element, false, false, observeResizing);
-            const getter = _observeResizing(element, watch, options);
-            createComputed(() => setEntry(getter()));
+            entry = _observeResizing(element, watch, options);
+            onMouthSignal![1](true);
+            onMouthSignal = null;
         });
-        return entry;
+
+        return () => {
+            if (onMouthSignal) { onMouthSignal[0](); }
+            return entry ? entry() : null;
+        }
     }
 }
 

@@ -11,6 +11,7 @@ import type {
     createAsyncRenderEffect as cdkCreateAsyncRenderEffect,
     createPresence as cdkCreatePresence, 
     createEntrance as cdkCreateEntrance,
+    createLazyMemo as cdkCreateLazyMemo
 } from './signals';
 import { _EventLogs, _mocEnvironment, _MockEnvironmentController } from '../test-utils/schedulers_test_utils';
 
@@ -18,6 +19,7 @@ type _FakeElementEventName = 'transitionstart' | 'transitionend' | 'transitionca
 
 const EFFECT_RUNS = 'EFFECT_RUNS';
 const RENDER_EFFECT_RUNS = 'RENDER_EFFECT_RUNS';
+const REACTION_RUNS = 'REACTION_RUNS';
 
 
 
@@ -55,7 +57,9 @@ describe('Signals', () => {
         vitest.doMock('solid-js', async () => {
             const ogSolidJsModule = await vitest.importActual<typeof import('solid-js')>('solid-js/dist/dev.js');
             const createEffect = ogSolidJsModule.createEffect;
-            const createRenderEffect = ogSolidJsModule.createRenderEffect
+            const createRenderEffect = ogSolidJsModule.createRenderEffect;
+            const createReaction = ogSolidJsModule.createReaction;
+            const onMount = ogSolidJsModule.onMount
             return {
                 ...ogSolidJsModule,
                 createEffect: (cb: EffectFunction<any, any>, v: any, o: any) => {
@@ -69,6 +73,18 @@ describe('Signals', () => {
                         logEvent(RENDER_EFFECT_RUNS);
                         return cb(v);
                     }, v, o);
+                },
+                createReaction: (onInvalidate: () =>  void, options: any) => {
+                    return createReaction(() => {
+                        logEvent(REACTION_RUNS);
+                        onInvalidate();
+                    }, options)
+                },
+                onMount: (fn: () => void) => {
+                    onMount(() => {
+                        logEvent(EFFECT_RUNS);
+                        fn();
+                    })
                 }
             }
         });
@@ -80,8 +96,8 @@ describe('Signals', () => {
     });
 
     afterEach(() => {
-        disposeEnvironment();
         dispose();
+        disposeEnvironment();
     })
 
     afterAll(() => {
@@ -100,7 +116,6 @@ describe('Signals', () => {
             fireAnimationFrameEvent = signalsModule.fireAnimationFrameEvent;
         });
         
-
         describe('createAsapEffect().', () => {
 
             let createAsapEffect: typeof cdkCreateAsapEffect;
@@ -109,69 +124,71 @@ describe('Signals', () => {
                 createAsapEffect = signalsModule.createAsapEffect;
             });
 
-            it('Should throw error if first arg is not function or not empty array of functions.', () => {
-                const errorMessage = 'createAsapEffect(): Invalid first argument! It must be a function or array of functions!';
+            it('Should throw an error if the first arg is not function or not empty array of functions.', () => {
+                const errorMessage = 'createAsapEffect(): Invalid first argument! Expected a function.';
                 inRoot(() => {
                     //will throw
-                    expect(() => createAsapEffect(true as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect(false as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect(0 as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect(1 as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect('' as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect('A' as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect(Symbol() as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect(null as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect(undefined as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect({} as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapEffect([] as any, () => {})).toThrow(errorMessage);
+                    expect(() => createAsapEffect(true as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect(false as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect(0 as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect(1 as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect('' as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect('A' as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect(Symbol() as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect(null as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect(undefined as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect({} as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect([] as any)).toThrow(errorMessage);
 
                     //will not throw
-                    expect(() => createAsapEffect(() => {}, () => {})).not.toThrow();
-                    expect(() => createAsapEffect([() => {}], () => {})).not.toThrow();
+                    expect(() => createAsapEffect(() => {})).not.toThrow();
                 });
 
-                assertLog([ EFFECT_RUNS, EFFECT_RUNS ]);
+                assertLog([ EFFECT_RUNS ]);
             });
 
-            it('Should throw error if second arg is not a function.', () => {
-                const errorMessage = 'createAsapEffect(): Invalid second argument! It must be a function!';
+            it('Should throw an error if the second argument is not an optional boolean.', () => {
+                const errorMessage = 'Invalid second argument! Expected a boolean or nothing.';
+
                 inRoot(() => {
                     //Will throw
-                    expect(() => createAsapEffect(() => {}, true as any)).toThrow(errorMessage);
-                    expect(() => createAsapEffect(() => {}, false as any)).toThrow(errorMessage);
                     expect(() => createAsapEffect(() => {}, 0 as any)).toThrow(errorMessage);
                     expect(() => createAsapEffect(() => {}, 1 as any)).toThrow(errorMessage);
                     expect(() => createAsapEffect(() => {}, '' as any)).toThrow(errorMessage);
                     expect(() => createAsapEffect(() => {}, 'A' as any)).toThrow(errorMessage);
                     expect(() => createAsapEffect(() => {}, Symbol() as any)).toThrow(errorMessage);
-                    expect(() => createAsapEffect(() => {}, null as any)).toThrow(errorMessage);
-                    expect(() => createAsapEffect(() => {}, undefined as any)).toThrow(errorMessage);
                     expect(() => createAsapEffect(() => {}, {} as any)).toThrow(errorMessage);
                     expect(() => createAsapEffect(() => {}, [] as any)).toThrow(errorMessage);
+                    expect(() => createAsapEffect(() => {}, (() => {}) as any)).toThrow(errorMessage);
 
                     //Will not throw
-                    expect(() => createAsapEffect(() => {}, () => {})).not.toThrow();
+                    expect(() => createAsapEffect(() => {}, true)).not.toThrow();
+                    expect(() => createAsapEffect(() => {}, false)).not.toThrow();
+                    expect(() => createAsapEffect(() => {}, null as any)).not.toThrow();
+                    expect(() => createAsapEffect(() => {}, undefined)).not.toThrow();
                 });
-                
-                assertLog([ EFFECT_RUNS ]);
+
+                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ,EFFECT_RUNS, EFFECT_RUNS, EFFECT_RUNS ]);
+                fireMicrotaskEvent();
+                assertLog([ _EventLogs.FireMicrotask ]);
             });
 
             it('Should not schedule initial call.', () => {
-                inRoot(() => createAsapEffect([() => {}], () => {
+                inRoot(() => createAsapEffect(() => {
                     logEvent('A')
                 }));
                 assertLog([ EFFECT_RUNS, 'A' ]);
             });
 
             it('Should not schedule the initial call when the third argument is false.', () => {
-                inRoot(() => createAsapEffect([() => {}], () => {
+                inRoot(() => createAsapEffect(() => {
                     logEvent('A')
                 }, false));
                 assertLog([ EFFECT_RUNS, 'A' ]);
             });
 
             it('Should schedule the initial call when the third argument is true.', () => {
-                inRoot(() => createAsapEffect([() => {}], () => {
+                inRoot(() => createAsapEffect(() => {
                     logEvent('A')
                 }, true));
                 assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
@@ -182,13 +199,13 @@ describe('Signals', () => {
             it('Should schedule when signal change.', () => {
                 const [counter, setCounter] = createSignal(0);
 
-                inRoot(() => createAsapEffect(counter, () => {
+                inRoot(() => createAsapEffect(() => {
                     logEvent(`A${counter()}`);
                 }));
 
                 assertLog([ EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ])
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ])
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask, 'A1' ]);
             });
@@ -196,15 +213,15 @@ describe('Signals', () => {
             it('Should coalesce when signal change multiple times.', () => {
                 const [counter, setCounter] = createSignal(0);
 
-                inRoot(() => createAsapEffect(counter, () => {
+                inRoot(() => createAsapEffect(() => {
                     logEvent(`A${counter()}`);
                 }));
 
                 assertLog([ EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 setCounter(2);
-                assertLog([  EFFECT_RUNS ]);
+                assertLog([]);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask, 'A2' ]);
             });
@@ -212,7 +229,7 @@ describe('Signals', () => {
             it('Should run cleanup after signal change.', () => {
                 const [counter, setCounter] = createSignal(0);
 
-                inRoot(() => createAsapEffect(counter, () => {
+                inRoot(() => createAsapEffect(() => {
                     const value = counter()
                     logEvent(`A${value}`);
                     return () => logEvent(`A${value}_cleanup`);
@@ -220,16 +237,18 @@ describe('Signals', () => {
 
                 assertLog([ EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ])
+                assertLog([ 'A0_cleanup', REACTION_RUNS, _EventLogs.AddMicrotask ])
                 fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A0_cleanup', 'A1' ]);
+                assertLog([ _EventLogs.FireMicrotask, 'A1' ]);
+                dispose();
+                assertLog([ 'A1_cleanup' ]);
             });
 
             it('Should run scheduled effect in owning context',() => {
                 const [source, setSource] = createSignal(false);
                 let owner: any = undefined;
 
-                inRoot(() => createAsapEffect(source, () => {
+                inRoot(() => createAsapEffect(() => {
                     if (source()) {
                         owner = getOwner();
                     }
@@ -237,277 +256,18 @@ describe('Signals', () => {
 
                 assertLog([ EFFECT_RUNS ]);
                 setSource(true);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
                 expect(owner).toBeTypeOf('object');
             });
 
-            it('Should run cleanup in owning context', () => {
-                const [source, setSource] = createSignal(0);
-                let owner: any = undefined;
-                let cleanupOwner: any = undefined
-                
-                inRoot(() => createAsapEffect(source, () => {
-                    const value = source();
-                    owner = getOwner();
-                    return () => {
-                        logEvent(`A${value}_cleanup`)
-                        cleanupOwner = getOwner();
-                    }
-                }));
-
-                expect(getOwner()).toBeFalsy();
-                assertLog([ EFFECT_RUNS ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBeTypeOf('undefined');
-                setSource(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A0_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBe(owner);
-                setSource(2);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A1_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBe(owner);
-                setSource(3);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A2_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBe(owner);
-            });
-
             it('Should work with multiple signals', () => {
 
                 const [counterA, setCounterA] = createSignal(0);
                 const [counterB, setCounterB] = createSignal(0);
 
-                inRoot(() => createAsapEffect([counterA, counterB], () => {
-                    const valueA = counterA()
-                    const valueB = counterB()
-                    logEvent(`A${valueA}`);
-                    logEvent(`B${valueB}`);
-
-                    return () => {
-                        logEvent(`A${valueA}_cleanup`);
-                        logEvent(`B${valueB}_cleanup`);
-                    }
-                }));
-
-                assertLog([ EFFECT_RUNS, 'A0', 'B0' ])
-                setCounterA(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A0_cleanup', 'B0_cleanup', 'A1', 'B0' ]);
-                setCounterB(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A1_cleanup', 'B0_cleanup', 'A1', 'B1' ]);
-                setCounterA(2);
-                setCounterB(2);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask, EFFECT_RUNS ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A1_cleanup', 'B1_cleanup', 'A2', 'B2' ]);
-                setCounterA(3);
-                setCounterB(3);
-                setCounterA(4);
-                setCounterB(4);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask, EFFECT_RUNS, EFFECT_RUNS, EFFECT_RUNS ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A2_cleanup', 'B2_cleanup', 'A4', 'B4' ]);
-            });
-
-        });
-
-        describe('createAsyncEffect().', () => {
-
-            let createAsyncEffect: typeof cdkCreateAsyncEffect;
-
-            beforeEach(() => {
-                createAsyncEffect = signalsModule.createAsyncEffect;
-            });
-
-            it('Should throw error if first arg is not function or not empty array of functions.', () => {
-                const errorMessage = 'createAsyncEffect(): Invalid first argument! It must be a function or array of functions!';
-                inRoot(() => {
-                    //will throw
-                    expect(() => createAsyncEffect(true as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(false as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(0 as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(1 as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect('' as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect('A' as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(Symbol() as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(null as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(undefined as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect({} as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncEffect([] as any, () => {})).toThrow(errorMessage);
-
-                    //will not throw
-                    expect(() => createAsyncEffect(() => {}, () => {})).not.toThrow();
-                    expect(() => createAsyncEffect([() => {}], () => {})).not.toThrow();
-                });
-
-                assertLog([ EFFECT_RUNS, EFFECT_RUNS ]);
-            });
-
-            it('Should throw error if second arg is not a function.', () => {
-                const errorMessage = 'createAsyncEffect(): Invalid second argument! It must be a function!';
-                inRoot(() => {
-                    //Will throw
-                    expect(() => createAsyncEffect(() => {}, true as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, false as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, 0 as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, 1 as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, '' as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, 'A' as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, Symbol() as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, null as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, undefined as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, {} as any)).toThrow(errorMessage);
-                    expect(() => createAsyncEffect(() => {}, [] as any)).toThrow(errorMessage);
-
-                    //Will not throw
-                    expect(() => createAsyncEffect(() => {}, () => {})).not.toThrow();
-                });
-
-                assertLog([ EFFECT_RUNS ]);
-            });
-
-            it('Should not schedule initial call.', () => {
-                inRoot(() => createAsyncEffect([() => {}], () => {
-                    logEvent('A')
-                }));
-                assertLog([ EFFECT_RUNS, 'A' ]);
-            });
-
-            it('Should not schedule the initial call when the third argument is false.', () => {
-                inRoot(() => createAsyncEffect([() => {}], () => {
-                    logEvent('A')
-                }, false));
-                assertLog([ EFFECT_RUNS, 'A' ]);
-            });
-
-            it('Should schedule the initial call when the third argument is true.', () => {
-                inRoot(() => createAsyncEffect([() => {}], () => {
-                    logEvent('A')
-                }, true));
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A' ]);
-            });
-
-            it('Should schedule when signal change.', () => {
-                const [counter, setCounter] = createSignal(0);
-
-                inRoot(() => createAsyncEffect(counter, () => {
-                    logEvent(`A${counter()}`);
-                }));
-
-                assertLog([ EFFECT_RUNS, 'A0' ]);
-                setCounter(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ])
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1' ]);
-            });
-
-            it('Should coalesce when signal change multiple times.', () => {
-                const [counter, setCounter] = createSignal(0);
-
-                inRoot(() => createAsyncEffect(counter, () => {
-                    logEvent(`A${counter()}`);
-                }));
-
-                assertLog([ EFFECT_RUNS, 'A0' ]);
-                setCounter(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                setCounter(2);
-                assertLog([  EFFECT_RUNS ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A2' ]);
-            });
-
-            it('Should run cleanup after signal change.', () => {
-                const [counter, setCounter] = createSignal(0);
-
-                inRoot(() => createAsyncEffect(counter, () => {
-                    const value = counter()
-                    logEvent(`A${value}`);
-                    return () => logEvent(`A${value}_cleanup`);
-                }));
-
-                assertLog([ EFFECT_RUNS, 'A0' ]);
-                setCounter(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ])
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A0_cleanup', 'A1' ]);
-            });
-
-            it('Should run scheduled effect in owning context',() => {
-                const [source, setSource] = createSignal(false);
-                let owner: any = undefined;
-
-                inRoot(() => createAsyncEffect(source, () => {
-                    if (source()) {
-                        owner = getOwner();
-                    }
-                }));
-
-                assertLog([ EFFECT_RUNS ]);
-                setSource(true);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame ]);
-                expect(owner).toBeTypeOf('object');
-            });
-
-            it('Should run cleanup in owning context', () => {
-                const [source, setSource] = createSignal(0);
-                let owner: any = undefined;
-                let cleanupOwner: any = undefined;
-   
-                inRoot(() => createAsyncEffect(source, () => {
-                    const value = source();
-                    owner = getOwner();
-                    return () => {
-                        logEvent(`A${value}_cleanup`);
-                        cleanupOwner = getOwner();
-                    }
-                }));
-
-                expect(getOwner()).toBeFalsy();
-                assertLog([ EFFECT_RUNS ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBeTypeOf('undefined');
-                setSource(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A0_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBe(owner);
-                setSource(2);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBe(owner);
-                setSource(3);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A2_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBe(owner);
-            });
-
-            it('Should work with multiple signals', () => {
-                const [counterA, setCounterA] = createSignal(0);
-                const [counterB, setCounterB] = createSignal(0);
-
-                inRoot(() => createAsyncEffect([counterA, counterB], () => {
+                inRoot(() => createAsapEffect(() => {
                     const valueA = counterA()
                     const valueB = counterB()
                     logEvent(`A${valueA}`);
@@ -521,25 +281,216 @@ describe('Signals', () => {
 
                 assertLog([ EFFECT_RUNS, 'A0', 'B0' ]);
                 setCounterA(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A0_cleanup', 'B0_cleanup', 'A1', 'B0' ]);
+                assertLog([ 'A0_cleanup', 'B0_cleanup', REACTION_RUNS, _EventLogs.AddMicrotask ]);
+                fireMicrotaskEvent();
+                assertLog([ _EventLogs.FireMicrotask, 'A1', 'B0' ]);
                 setCounterB(1);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1_cleanup', 'B0_cleanup', 'A1', 'B1' ])
+                assertLog([ 'A1_cleanup', 'B0_cleanup', REACTION_RUNS, _EventLogs.AddMicrotask ]);
+                fireMicrotaskEvent();
+                assertLog([ _EventLogs.FireMicrotask, 'A1', 'B1' ]);
                 setCounterA(2);
                 setCounterB(2);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame, EFFECT_RUNS ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1_cleanup', 'B1_cleanup', 'A2', 'B2' ]);
+                assertLog([ 'A1_cleanup', 'B1_cleanup', REACTION_RUNS, _EventLogs.AddMicrotask ]);
+                fireMicrotaskEvent();
+                assertLog([ _EventLogs.FireMicrotask, 'A2', 'B2' ]);
                 setCounterA(3);
                 setCounterB(3);
                 setCounterA(4);
                 setCounterB(4);
-                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame, EFFECT_RUNS, EFFECT_RUNS, EFFECT_RUNS ]);
+                assertLog([ 'A2_cleanup', 'B2_cleanup', REACTION_RUNS, _EventLogs.AddMicrotask ]);
+                fireMicrotaskEvent();
+                assertLog([ _EventLogs.FireMicrotask, 'A4', 'B4' ]);
+                dispose();
+                assertLog([ 'A4_cleanup', 'B4_cleanup',  ])
+            });
+
+        });
+
+        describe('createAsyncEffect().', () => {
+
+            let createAsyncEffect: typeof cdkCreateAsyncEffect;
+
+            beforeEach(() => {
+                createAsyncEffect = signalsModule.createAsyncEffect;
+            });
+
+            it('Should throw an error if the first arg is not function or not empty array of functions.', () => {
+                const errorMessage = 'createAsyncEffect(): Invalid first argument! Expected a function.';
+                inRoot(() => {
+                    //will throw
+                    expect(() => createAsyncEffect(true as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(false as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(0 as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(1 as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect('' as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect('A' as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(Symbol() as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(null as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(undefined as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect({} as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect([] as any)).toThrow(errorMessage);
+
+                    //will not throw
+                    expect(() => createAsyncEffect(() => {})).not.toThrow();
+                });
+
+                assertLog([ EFFECT_RUNS ]);
+            });
+
+            it('Should throw an error if the second argument is not an optional boolean.', () => {
+                const errorMessage = 'Invalid second argument! Expected a boolean or nothing.';
+
+                inRoot(() => {
+                    //Will throw
+                    expect(() => createAsyncEffect(() => {}, 0 as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(() => {}, 1 as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(() => {}, '' as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(() => {}, 'A' as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(() => {}, Symbol() as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(() => {}, {} as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(() => {}, [] as any)).toThrow(errorMessage);
+                    expect(() => createAsyncEffect(() => {}, (() => {}) as any)).toThrow(errorMessage);
+
+                    //Will not throw
+                    expect(() => createAsyncEffect(() => {}, true)).not.toThrow();
+                    expect(() => createAsyncEffect(() => {}, false)).not.toThrow();
+                    expect(() => createAsyncEffect(() => {}, null as any)).not.toThrow();
+                    expect(() => createAsyncEffect(() => {}, undefined)).not.toThrow();
+                });
+
+                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ,EFFECT_RUNS, EFFECT_RUNS, EFFECT_RUNS ]);
                 fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A2_cleanup', 'B2_cleanup', 'A4', 'B4' ]);
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame ]);
+            });
+
+            it('Should not schedule initial call.', () => {
+                inRoot(() => createAsyncEffect(() => {
+                    logEvent('A')
+                }));
+                assertLog([ EFFECT_RUNS, 'A' ]);
+            });
+
+            it('Should not schedule the initial call when the third argument is false.', () => {
+                inRoot(() => createAsyncEffect(() => {
+                    logEvent('A')
+                }, false));
+                assertLog([ EFFECT_RUNS, 'A' ]);
+            });
+
+            it('Should schedule the initial call when the third argument is true.', () => {
+                inRoot(() => createAsyncEffect(() => {
+                    logEvent('A')
+                }, true));
+                assertLog([ EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                fireTimeoutEvent();
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A' ]);
+            });
+
+            it('Should schedule when signal change.', () => {
+                const [counter, setCounter] = createSignal(0);
+
+                inRoot(() => createAsyncEffect(() => {
+                    logEvent(`A${counter()}`);
+                }));
+
+                assertLog([ EFFECT_RUNS, 'A0' ]);
+                setCounter(1);
+                assertLog([ REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ])
+                fireTimeoutEvent();
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1' ]);
+            });
+
+            it('Should coalesce when signal change multiple times.', () => {
+                const [counter, setCounter] = createSignal(0);
+
+                inRoot(() => createAsyncEffect(() => {
+                    logEvent(`A${counter()}`);
+                }));
+
+                assertLog([ EFFECT_RUNS, 'A0' ]);
+                setCounter(1);
+                assertLog([ REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                setCounter(2);
+                assertLog([]);
+                fireTimeoutEvent();
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A2' ]);
+            });
+
+            it('Should run cleanup after signal change.', () => {
+                const [counter, setCounter] = createSignal(0);
+
+                inRoot(() => createAsyncEffect(() => {
+                    const value = counter()
+                    logEvent(`A${value}`);
+                    return () => logEvent(`A${value}_cleanup`);
+                }));
+
+                assertLog([ EFFECT_RUNS, 'A0' ]);
+                setCounter(1);
+                assertLog([ 'A0_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ])
+                fireTimeoutEvent();
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1' ]);
+                dispose()
+                assertLog([ 'A1_cleanup' ]);
+            });
+
+            it('Should run scheduled effect in owning context',() => {
+                const [source, setSource] = createSignal(false);
+                let owner: any = undefined;
+
+                inRoot(() => createAsyncEffect(() => {
+                    if (source()) {
+                        owner = getOwner();
+                    }
+                }));
+
+                assertLog([ EFFECT_RUNS ]);
+                setSource(true);
+                assertLog([ REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                fireTimeoutEvent();
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame ]);
+                expect(owner).toBeTypeOf('object');
+            });
+
+            it('Should work with multiple signals', () => {
+                const [counterA, setCounterA] = createSignal(0);
+                const [counterB, setCounterB] = createSignal(0);
+
+                inRoot(() => createAsyncEffect(() => {
+                    const valueA = counterA()
+                    const valueB = counterB()
+                    logEvent(`A${valueA}`);
+                    logEvent(`B${valueB}`);
+
+                    return () => {
+                        logEvent(`A${valueA}_cleanup`);
+                        logEvent(`B${valueB}_cleanup`);
+                    }
+                }));
+
+                assertLog([ EFFECT_RUNS, 'A0', 'B0' ]);
+                setCounterA(1);
+                assertLog([ 'A0_cleanup', 'B0_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                fireTimeoutEvent();
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1', 'B0' ]);
+                setCounterB(1);
+                assertLog([ 'A1_cleanup', 'B0_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                fireTimeoutEvent();
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1', 'B1' ])
+                setCounterA(2);
+                setCounterB(2);
+                assertLog([ 'A1_cleanup', 'B1_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                fireTimeoutEvent();
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A2', 'B2' ]);
+                setCounterA(3);
+                setCounterB(3);
+                setCounterA(4);
+                setCounterB(4);
+                assertLog([ 'A2_cleanup', 'B2_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                fireTimeoutEvent();
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A4', 'B4' ]);
+                dispose()
+                assertLog([ 'A4_cleanup', 'B4_cleanup',  ])
             });
 
         });
@@ -553,63 +504,39 @@ describe('Signals', () => {
             });
 
             it('Should throw error if first arg is not function or not empty array of functions.', () => {
-                const errorMessage = 'createAsapRenderEffect(): Invalid first argument! It must be a function or array of functions!';
+                const errorMessage = 'createAsapRenderEffect(): Invalid argument! Expected a function.';
                 inRoot(() => {
                     //will throw
-                    expect(() => createAsapRenderEffect(true as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(false as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(0 as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(1 as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect('' as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect('A' as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(Symbol() as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(null as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(undefined as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect({} as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect([] as any, () => {})).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect(true as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect(false as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect(0 as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect(1 as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect('' as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect('A' as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect(Symbol() as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect(null as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect(undefined as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect({} as any)).toThrow(errorMessage);
+                    expect(() => createAsapRenderEffect([] as any)).toThrow(errorMessage);
 
                     //will not throw
-                    expect(() => createAsapRenderEffect(() => {}, () => {})).not.toThrow();
-                    expect(() => createAsapRenderEffect([() => {}], () => {})).not.toThrow();
-                });
-
-                assertLog([ RENDER_EFFECT_RUNS, RENDER_EFFECT_RUNS ]);
-            });
-
-            it('Should throw error if second arg is not a function.', () => {
-                const errorMessage = 'createAsapRenderEffect(): Invalid second argument! It must be a function!';
-
-                inRoot(() => {
-                    //Will throw
-                    expect(() => createAsapRenderEffect(() => {}, true as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, false as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, 0 as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, 1 as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, '' as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, 'A' as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, Symbol() as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, null as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, undefined as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, {} as any)).toThrow(errorMessage);
-                    expect(() => createAsapRenderEffect(() => {}, [] as any)).toThrow(errorMessage);
-
-                    //Will not throw
-                    expect(() => createAsapRenderEffect(() => {}, () => {})).not.toThrow();
+                    expect(() => createAsapRenderEffect(() => {})).not.toThrow();
                 });
 
                 assertLog([ RENDER_EFFECT_RUNS ]);
             });
 
+
             it('Should schedule when signal change.', () => {
                 const [counter, setCounter] = createSignal(0);
 
-                inRoot(() => createAsapRenderEffect(counter, () => {
+                inRoot(() => createAsapRenderEffect(() => {
                     logEvent(`A${counter()}`);
                 }));
 
                 assertLog([ RENDER_EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask, 'A1' ]);
             });
@@ -617,15 +544,15 @@ describe('Signals', () => {
             it('Should coalesce when signal change multiple times.', () => {
                 const [counter, setCounter] = createSignal(0);
 
-                inRoot(() => createAsapRenderEffect(counter, () => {
+                inRoot(() => createAsapRenderEffect(() => {
                     logEvent(`A${counter()}`);
                 }));
 
                 assertLog([ RENDER_EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 setCounter(2);
-                assertLog([  RENDER_EFFECT_RUNS ]);
+                assertLog([]);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask, 'A2' ]);
             });
@@ -633,7 +560,7 @@ describe('Signals', () => {
             it('Should run cleanup after signal change.', () => {
                 const [counter, setCounter] = createSignal(0);
 
-                createRoot(() => createAsapRenderEffect(counter, () => {
+                inRoot(() => createAsapRenderEffect(() => {
                     const value = counter()
                     logEvent(`A${value}`);
                     return () => logEvent(`A${value}_cleanup`);
@@ -641,16 +568,18 @@ describe('Signals', () => {
 
                 assertLog([ RENDER_EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask ])
+                assertLog([ 'A0_cleanup', REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A0_cleanup', 'A1' ]);
+                assertLog([ _EventLogs.FireMicrotask, 'A1' ]);
+                dispose();
+                assertLog([ 'A1_cleanup' ]);
             });
 
             it('Should run scheduled effect in owning context.',() => {
                 const [source, setSource] = createSignal(false);
                 let owner: any = undefined;
 
-                inRoot(() => createAsapRenderEffect(source, () => {
+                inRoot(() => createAsapRenderEffect(() => {
                     if (source()) {
                         owner = getOwner();
                     }
@@ -658,55 +587,17 @@ describe('Signals', () => {
 
                 assertLog([ RENDER_EFFECT_RUNS ]);
                 setSource(true);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
                 expect(owner).toBeTypeOf('object');
-            });
-
-            it('Should run cleanup in owning context.', () => {
-                const [source, setSource] = createSignal(0);
-                let owner: any = undefined;
-                let cleanupOwner: any = undefined;
-
-                inRoot(() => createAsapRenderEffect(source, () => {
-                    const value = source()
-                    owner = getOwner()
-                    return () => {
-                        logEvent(`A${value}_cleanup`)
-                        cleanupOwner = getOwner();
-                    }
-                }));
-
-                expect(getOwner()).toBeFalsy();
-                assertLog([ RENDER_EFFECT_RUNS ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBeTypeOf('undefined');
-                setSource(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A0_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBe(owner);
-                setSource(2);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A1_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBe(owner);
-                setSource(3);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask ]);
-                fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A2_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBe(owner);
             });
 
             it('Should work with multiple signals.', () => {
                 const [counterA, setCounterA] = createSignal(0);
                 const [counterB, setCounterB] = createSignal(0);
 
-                inRoot(() => createAsapRenderEffect([counterA, counterB], () => {
+                inRoot(() => createAsapRenderEffect(() => {
                     const valueA = counterA()
                     const valueB = counterB()
                     logEvent(`A${valueA}`);
@@ -720,25 +611,27 @@ describe('Signals', () => {
 
                 assertLog([ RENDER_EFFECT_RUNS, 'A0', 'B0' ])
                 setCounterA(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ 'A0_cleanup', 'B0_cleanup', REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A0_cleanup', 'B0_cleanup', 'A1', 'B0' ]);
+                assertLog([ _EventLogs.FireMicrotask, 'A1', 'B0' ]);
                 setCounterB(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ 'A1_cleanup', 'B0_cleanup', REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A1_cleanup', 'B0_cleanup', 'A1', 'B1' ])
+                assertLog([ _EventLogs.FireMicrotask, 'A1', 'B1' ])
                 setCounterA(2);
                 setCounterB(2);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask, RENDER_EFFECT_RUNS ]);
+                assertLog([ 'A1_cleanup', 'B1_cleanup', REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A1_cleanup', 'B1_cleanup', 'A2', 'B2' ]);
+                assertLog([ _EventLogs.FireMicrotask, 'A2', 'B2' ]);
                 setCounterA(3);
                 setCounterB(3);
                 setCounterA(4);
                 setCounterB(4);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.AddMicrotask, RENDER_EFFECT_RUNS, RENDER_EFFECT_RUNS, RENDER_EFFECT_RUNS ]);
+                assertLog([ 'A2_cleanup', 'B2_cleanup',  REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
-                assertLog([ _EventLogs.FireMicrotask, 'A2_cleanup', 'B2_cleanup', 'A4', 'B4' ]);
+                assertLog([ _EventLogs.FireMicrotask, 'A4', 'B4' ]);
+                dispose();
+                assertLog([ 'A4_cleanup', 'B4_cleanup' ]);
             });
 
         });
@@ -752,49 +645,24 @@ describe('Signals', () => {
             });
 
             it('Should throw error if first arg is not function or not empty array of functions.', () => {
-                const errorMessage = 'createAsyncRenderEffect(): Invalid first argument! It must be a function or array of functions!';
+                const errorMessage = 'createAsyncRenderEffect(): Invalid argument! Expected a function.';
 
                 inRoot(() => {
                     //will throw
-                    expect(() => createAsyncRenderEffect(true as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(false as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(0 as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(1 as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect('' as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect('A' as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(Symbol() as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(null as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(undefined as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect({} as any, () => {})).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect([] as any, () => {})).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect(true as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect(false as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect(0 as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect(1 as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect('' as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect('A' as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect(Symbol() as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect(null as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect(undefined as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect({} as any)).toThrow(errorMessage);
+                    expect(() => createAsyncRenderEffect([] as any)).toThrow(errorMessage);
 
                     //will not throw
-                    expect(() => createAsyncRenderEffect(() => {}, () => {})).not.toThrow();
-                    expect(() => createAsyncRenderEffect([() => {}], () => {})).not.toThrow();
-                });
-
-                assertLog([ RENDER_EFFECT_RUNS, RENDER_EFFECT_RUNS ]);
-            });
-
-            it('Should throw error if second arg is not a function.', () => {
-                const errorMessage = 'createAsyncRenderEffect(): Invalid second argument! It must be a function!';
-
-                inRoot(() => {
-                    //Will throw
-                    expect(() => createAsyncRenderEffect(() => {}, true as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, false as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, 0 as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, 1 as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, '' as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, 'A' as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, Symbol() as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, null as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, undefined as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, {} as any)).toThrow(errorMessage);
-                    expect(() => createAsyncRenderEffect(() => {}, [] as any)).toThrow(errorMessage);
-
-                    //Will not throw
-                    expect(() => createAsyncRenderEffect(() => {}, () => {})).not.toThrow();
+                    expect(() => createAsyncRenderEffect(() => {})).not.toThrow();
                 });
 
                 assertLog([ RENDER_EFFECT_RUNS ]);
@@ -803,13 +671,13 @@ describe('Signals', () => {
             it('Should schedule when signal change.', () => {
                 const [counter, setCounter] = createSignal(0);
 
-                inRoot(() => createAsyncRenderEffect(counter, () => {
+                inRoot(() => createAsyncRenderEffect(() => {
                     logEvent(`A${counter()}`);
                 }));
 
                 assertLog([ RENDER_EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ])
+                assertLog([ REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ])
                 fireTimeoutEvent();
                 assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1' ]);
             });
@@ -817,15 +685,15 @@ describe('Signals', () => {
             it('Should coalesce when signal change multiple times.', () => {
                 const [counter, setCounter] = createSignal(0);
 
-                inRoot(() => createAsyncRenderEffect(counter, () => {
+                inRoot(() => createAsyncRenderEffect(() => {
                     logEvent(`A${counter()}`);
                 }));
 
                 assertLog([ RENDER_EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                assertLog([ REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
                 setCounter(2);
-                assertLog([  RENDER_EFFECT_RUNS ]);
+                assertLog([]);
                 fireTimeoutEvent();
                 assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A2' ]);
             });
@@ -833,7 +701,7 @@ describe('Signals', () => {
             it('Should run cleanup after signal change.', () => {
                 const [counter, setCounter] = createSignal(0);
 
-                inRoot(() => createAsyncRenderEffect(counter, () => {
+                inRoot(() => createAsyncRenderEffect(() => {
                     const value = counter()
                     logEvent(`A${value}`);
                     return () => logEvent(`A${value}_cleanup`);
@@ -841,16 +709,18 @@ describe('Signals', () => {
 
                 assertLog([ RENDER_EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                assertLog([ 'A0_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
                 fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A0_cleanup', 'A1' ]);
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1' ]);
+                dispose();
+                assertLog(['A1_cleanup']);
             });
 
             it('Should run scheduled effect in owning context.',() => {
                 const [source, setSource] = createSignal(false);
                 let owner: any = undefined;
 
-                inRoot(() => createAsyncRenderEffect(source, () => {
+                inRoot(() => createAsyncRenderEffect(() => {
                     if (source()) {
                         owner = getOwner();
                     }
@@ -858,54 +728,16 @@ describe('Signals', () => {
 
                 assertLog([ RENDER_EFFECT_RUNS ]);
                 setSource(true);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                assertLog([ REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
                 fireTimeoutEvent();
                 assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame ]);
                 expect(owner).toBeTypeOf('object');
             });
 
-            it('Should run cleanup in owning context.', () => {
-                const [source, setSource] = createSignal(0);
-                let owner: any = undefined;
-                let cleanupOwner: any = undefined;
-
-                inRoot(() => createAsyncRenderEffect(source, () => {
-                    const value = source();
-                    owner = getOwner();
-                    return () => {
-                        logEvent(`A${value}_cleanup`);
-                        cleanupOwner = getOwner();
-                    }
-                }));
-
-                expect(getOwner()).toBeFalsy();
-                assertLog([ RENDER_EFFECT_RUNS ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBeTypeOf('undefined');
-                setSource(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A0_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBeTypeOf('object');
-                setSource(2);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBeTypeOf('object');
-                setSource(3);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
-                fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A2_cleanup' ]);
-                expect(owner).toBeTypeOf('object');
-                expect(cleanupOwner).toBeTypeOf('object');
-            });
-
             it('Should work with multiple signals', () => {
                 const [counterA, setCounterA] = createSignal(0);
                 const [counterB, setCounterB] = createSignal(0);
-                inRoot(() => createAsyncRenderEffect([counterA, counterB], () => {
+                inRoot(() => createAsyncRenderEffect(() => {
                     const valueA = counterA()
                     const valueB = counterB()
                     logEvent(`A${valueA}`);
@@ -917,36 +749,46 @@ describe('Signals', () => {
                     }
                 }));
 
-                assertLog([ RENDER_EFFECT_RUNS, 'A0', 'B0' ])
+                assertLog([ RENDER_EFFECT_RUNS, 'A0', 'B0' ]);
                 setCounterA(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                assertLog([ 'A0_cleanup', 'B0_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
                 fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A0_cleanup', 'B0_cleanup', 'A1', 'B0' ]);
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1', 'B0' ]);
                 setCounterB(1);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
+                assertLog([ 'A1_cleanup', 'B0_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
                 fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1_cleanup', 'B0_cleanup', 'A1', 'B1' ])
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1', 'B1' ])
                 setCounterA(2);
                 setCounterB(2);
-                assertLog([ RENDER_EFFECT_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame, RENDER_EFFECT_RUNS ]);
+                assertLog([ 'A1_cleanup', 'B1_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
                 fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A1_cleanup', 'B1_cleanup', 'A2', 'B2' ]);
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A2', 'B2' ]);
                 setCounterA(3);
                 setCounterB(3);
                 setCounterA(4);
                 setCounterB(4);
-                assertLog([ 
-                    RENDER_EFFECT_RUNS,
-                    _EventLogs.SetTimeout,
-                    _EventLogs.RequestAnimationFrame,
-                    RENDER_EFFECT_RUNS,
-                    RENDER_EFFECT_RUNS,
-                    RENDER_EFFECT_RUNS
-                ]);
+                assertLog([ 'A2_cleanup', 'B2_cleanup', REACTION_RUNS, _EventLogs.SetTimeout, _EventLogs.RequestAnimationFrame ]);
                 fireTimeoutEvent();
-                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A2_cleanup', 'B2_cleanup', 'A4', 'B4' ]);
+                assertLog([ _EventLogs.FireTimeout, _EventLogs.CancelAnimationFrame, 'A4', 'B4' ]);
+                dispose();
+                assertLog([ 'A4_cleanup', 'B4_cleanup',  ])
             });
 
+        });
+
+        describe('createLazyMemo()', () => {
+            let createLazyMemo: typeof cdkCreateLazyMemo;
+
+            beforeEach(() => createLazyMemo = signalsModule.createLazyMemo);
+
+            it('Should create memo lazily.', () => {
+                const fn = vitest.fn(() => 1);
+                const memo = createLazyMemo(fn);
+
+                expect(fn).not.toHaveBeenCalled();
+                expect(memo()).toBe(1);
+                expect(fn).toHaveBeenCalledTimes(1);
+            });
         });
 
         describe('createPresence()', () => {
@@ -1023,7 +865,7 @@ describe('Signals', () => {
 
                 assertLog([ EFFECT_RUNS ]);
                 setSource(() => null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state()).toBe(o);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1042,7 +884,7 @@ describe('Signals', () => {
 
                 assertLog([ EFFECT_RUNS ])
                 setSource(() => null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state()).toBe(o);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1062,7 +904,7 @@ describe('Signals', () => {
                 assertLog([ EFFECT_RUNS ]);
                 fireEvent(element, 'transitionstart')
                 setSource(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state()).toBe(o);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1084,7 +926,7 @@ describe('Signals', () => {
                 assertLog([ EFFECT_RUNS ]);
                 fireEvent(element, 'transitionstart');
                 setSource(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state()).toBe(o);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1106,7 +948,7 @@ describe('Signals', () => {
                 assertLog([ EFFECT_RUNS ]);
                 fireEvent(element, 'animationstart');
                 setSource(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state()).toBe(o);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1128,7 +970,7 @@ describe('Signals', () => {
                 assertLog([ EFFECT_RUNS ]);
                 fireEvent(element, 'animationstart');
                 setSource(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state()).toBe(o);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1150,7 +992,7 @@ describe('Signals', () => {
                 assertLog([ EFFECT_RUNS ]);
                 fireEvent(element, 'transitionstart');
                 setSource(o);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state()).toBe(null);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1170,7 +1012,7 @@ describe('Signals', () => {
                 assertLog([ EFFECT_RUNS ]);
                 fireEvent(element, 'animationstart');
                 setSource(o);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state()).toBe(null);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1191,7 +1033,7 @@ describe('Signals', () => {
                 fireEvent(element1, 'transitionstart');
                 fireEvent(element1, 'animationstart');
                 setSource1(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state1()).toBe(o1);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1214,7 +1056,7 @@ describe('Signals', () => {
                 fireEvent(element2, 'transitionstart');
                 fireEvent(element2, 'animationstart');
                 setSource2(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state2()).toBe(o2);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1237,7 +1079,7 @@ describe('Signals', () => {
                 fireEvent(element3, 'transitionstart');
                 fireEvent(element3, 'animationstart');
                 setSource3(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state3()).toBe(o3);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1261,7 +1103,7 @@ describe('Signals', () => {
                 fireEvent(element4, 'transitionstart');
                 fireEvent(element4, 'animationstart');
                 setSource4(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 expect(state4()).toBe(o4);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
@@ -1292,7 +1134,7 @@ describe('Signals', () => {
                 disposeLast();
                 fireEvent(element1, 'transitionstart')
                 setSource1(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
                 expect(state1()).toBe(null);
@@ -1310,7 +1152,7 @@ describe('Signals', () => {
                 disposeLast();
                 fireEvent(element2, 'animationstart')
                 setSource2(null);
-                assertLog([ EFFECT_RUNS, _EventLogs.AddMicrotask ]);
+                assertLog([ REACTION_RUNS, _EventLogs.AddMicrotask ]);
                 fireMicrotaskEvent();
                 assertLog([ _EventLogs.FireMicrotask ]);
                 expect(state2()).toBe(null);
@@ -1391,7 +1233,29 @@ describe('Signals', () => {
             it('Should do nothing.', () => {
                 assertLog([]);
                 const [counter] = createSignal(0);
-                inRoot(() => createAsapEffect(counter, () => logEvent('A')));
+                inRoot(() => createAsapEffect(() => {
+                    counter();
+                    logEvent('A');
+                }));
+                assertLog([]);
+            });
+        });
+
+        describe('createAsapEffect()', () => {
+            
+            let createAsapEffect: typeof cdkCreateAsapEffect;
+
+            beforeEach(() => {
+                createAsapEffect = signalsModule.createAsapEffect;
+            })
+
+            it('Should do nothing.', () => {
+                assertLog([]);
+                const [counter] = createSignal(0);
+                inRoot(() => createAsapEffect(() => {
+                    counter();
+                    logEvent('A')
+                }));
                 assertLog([]);
             });
         });
@@ -1407,7 +1271,10 @@ describe('Signals', () => {
             it('Should do nothing.', () => {
                 assertLog([]);
                 const [counter] = createSignal(0);
-                inRoot(() => createAsyncEffect(counter, () => logEvent('A')));
+                inRoot(() => createAsyncEffect(() => {
+                    counter();
+                    logEvent('A');
+                }));
                 assertLog([]);
             })
         });
@@ -1422,14 +1289,16 @@ describe('Signals', () => {
             it('Should fallback to createRenderEffect() function.', () => {
                 assertLog([]);
                 const [counter, setCounter] = createSignal(0);
-                inRoot(() => createAsapRenderEffect(counter, () => {
+                inRoot(() => createAsapRenderEffect(() => {
                     const value = counter();
                     logEvent(`A${value}`);
                     return () => logEvent(`A${value}_cleanup`);
                 }));
                 assertLog([ RENDER_EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ RENDER_EFFECT_RUNS, 'A0_cleanup', 'A1' ]);
+                assertLog([ 'A0_cleanup', RENDER_EFFECT_RUNS, 'A1' ]);
+                dispose();
+                assertLog([ 'A1_cleanup' ]);
             });
         });
 
@@ -1443,14 +1312,16 @@ describe('Signals', () => {
             it('Should fallback to createRenderEffect() function.', () => {
                 assertLog([]);
                 const [counter, setCounter] = createSignal(0);
-                inRoot(() => createAsyncRenderEffect(counter, () => {
+                inRoot(() => createAsyncRenderEffect(() => {
                     const value = counter();
                     logEvent(`A${value}`);
                     return () => logEvent(`A${value}_cleanup`);
                 }));
                 assertLog([ RENDER_EFFECT_RUNS, 'A0' ]);
                 setCounter(1);
-                assertLog([ RENDER_EFFECT_RUNS, 'A0_cleanup', 'A1' ]);
+                assertLog([ 'A0_cleanup', RENDER_EFFECT_RUNS, 'A1' ]);
+                dispose();
+                assertLog([ 'A1_cleanup' ]);
             });
         });
 

@@ -1,5 +1,5 @@
-import { createEffect, createRoot, getOwner } from "solid-js";
-import { _eachPotentialTabbable, _getCurrentAssignedOrigin, focusTrap, focusVia, getFocusedElement, hasFocusedElement, isFocused, monitorFocusOrigin, observeHasFocusedElement, observeIsFocused } from "./focus-management";
+import { createEffect, createRoot, createSignal, getOwner, Show } from "solid-js";
+import { _eachPotentialTabbable, _getCurrentAssignedOrigin, focusAutoCapture, focusTrap, focusVia, getFocusedElement, hasFocusedElement, isFocused, monitorFocusOrigin, observeHasFocusedElement, observeIsFocused } from "./focus-management";
 import { render } from "solid-js/web";
 
 const enum Origin {
@@ -90,13 +90,6 @@ function inRoot<T>(fn: () => T): T {
         disposeBag.push(dispose);
         return fn();
     });
-}
-
-function getTestOwner(): unknown {
-    return createRoot((dispose) => {
-        disposeBag.push(dispose);
-        return getOwner()
-    })
 }
 
 afterEach(() => {
@@ -2905,6 +2898,7 @@ describe('focusTrap()', () => {
         vitest.useFakeTimers({ toFake: ['queueMicrotask', 'performance', 'setImmediate'] });
     });
     afterAll(() => {
+        vitest.runAllTimers();
         manualEffectsMode = true;
         vitest.useRealTimers();
     });
@@ -3242,4 +3236,77 @@ describe('focusTrap()', () => {
         expect(isFocused(child5)).toBe(true);
     });
 
+});
+
+describe('focusAutoCapture()', () => {
+    beforeAll(() => {
+        manualEffectsMode = false;
+        vitest.useFakeTimers({ toFake: ['queueMicrotask'] });
+    });
+    afterAll(() => {
+        vitest.runAllTicks();
+        manualEffectsMode = true;
+        vitest.useRealTimers();
+    });
+
+    it('Should focus the element after it is mounted.', () => {
+        const root = document.body.appendChild(document.createElement('div'));
+        const TestComponent = () => <div ref={focusAutoCapture} tabIndex={0} id="item"></div>;
+
+        inRoot(() => disposeBag.push(render(() => <TestComponent/>, root)));
+        vitest.runAllTicks();
+
+        expect(getFocusedElement()).toBe(document.getElementById('item'));
+    });
+
+    it('Should restore the last available previous focused element.', () => {
+        const div0 = document.body.appendChild(document.createElement('div'));
+        const div1 = document.body.appendChild(document.createElement('div'));
+        const div2 = document.body.appendChild(document.createElement('div'));
+        const div3 = document.body.appendChild(document.createElement('div'));
+        const div4 = document.body.appendChild(document.createElement('div'));
+        const div5 = document.body.appendChild(document.createElement('div'));
+
+        div0.tabIndex = 0;
+        div1.tabIndex = 0;
+        div2.tabIndex = 0;
+        div3.tabIndex = 0;
+        div4.tabIndex = 0;
+        div5.tabIndex = 0;
+
+        inRoot(() => focusAutoCapture(div0));
+        expect(getFocusedElement()).toBe(div0);
+
+        inRoot(() => focusAutoCapture(div1));
+        expect(getFocusedElement()).toBe(div1);
+
+        inRoot(() => focusAutoCapture(div2));
+        expect(getFocusedElement()).toBe(div2);
+
+        inRoot(() => focusAutoCapture(div3));
+        expect(getFocusedElement()).toBe(div3);
+
+        inRoot(() => focusAutoCapture(div4));
+        expect(getFocusedElement()).toBe(div4);
+
+        inRoot(() => focusAutoCapture(div5));
+        expect(getFocusedElement()).toBe(div5);
+
+
+        expect(disposeBag.length).toBe(6);
+
+        div3.focus = () => {}
+        div1.remove();
+        disposeBag[1]()
+
+        disposeBag[5]();
+        expect(getFocusedElement()).toBe(div4);
+
+        disposeBag[4]();
+        expect(getFocusedElement()).toBe(div2);
+
+        disposeBag[2]();
+        expect(getFocusedElement()).toBe(div0);
+
+    });
 })

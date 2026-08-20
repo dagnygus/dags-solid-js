@@ -4,10 +4,10 @@
  * Licensed under the MIT License.
  */
 
-import { Accessor, createEffect, createRenderEffect, createSignal, getOwner, onCleanup, untrack } from "solid-js";
+import { Accessor, createEffect, createMemo, createReaction, createRenderEffect, createSignal, EffectFunction, getOwner, MemoOptions, onCleanup, onMount, untrack } from "solid-js";
 import { _cancelTask, _createTaskObject, _scheduleAsapTask, _scheduleAsyncTask, _schedulePostPaintTask, type _Task } from "../internals/schedulers";
 import { isDev } from "solid-js/web";
-import { _assertIsOptionalObjectExcludingArray } from "../internals/arg-assertions";
+import { _assertIsOptionalBoolean, _assertIsOptionalObjectExcludingArray } from "../internals/arg-assertions";
 
 interface _CssAnimationHandler {
     isAnimating(): boolean,
@@ -55,62 +55,41 @@ function _coerceToFunction(target: Function | Function[]): Function {
  * If the callback returns a cleanup function, it is invoked before the next
  * scheduled execution or when the owning reactive context is disposed.
  *
- * @param source Reactive source that triggers the scheduled callback.
  * @param effectFn Callback executed asynchronously in a microtask whenever
  * the source changes.
  * @param scheduleInitialCall Whether to defer the initial callback invocation
  * to the next microtask. Defaults to `false`.
  */
-export function createAsapEffect(source: Accessor<any>, effectFn: () => (() => void) | void, scheduleInitialCall?: boolean): void;
-/**
- * Creates an effect that is built on top of SolidJS `createEffect`, but defers
- * the execution of the provided callback to the next microtask.
- *
- * Unlike `createEffect`, the callback is never executed synchronously after a
- * source changes. Multiple source updates occurring within the same synchronous
- * execution context are automatically coalesced into a single callback
- * invocation.
- *
- * The callback is executed once immediately after the owning effect is created,
- * and then after every source change. If the callback returns a cleanup
- * function, it is invoked before the next scheduled execution or when the
- * owning reactive context is disposed.
- *
- * Any accessor from the provided array may trigger the scheduled callback.
- *
- * @param sources Reactive sources that trigger the scheduled callback.
- * @param effectFn Callback executed asynchronously in a microtask whenever any
- * source changes.
- */
-export function createAsapEffect(sources: Accessor<any>[], effectFn: () => (() => void) | void, scheduleInitialCall?: boolean): void;
-export function createAsapEffect(source: any, effectFn: () => (() => void) | void,  scheduleInitialCall?: boolean): void {
+export function createAsapEffect(effectFn: () => (() => void) | void,  scheduleInitialCall?: boolean): void {
     if (__IS_SERVER__) { return; }
-    isDev &&
-    _assertIsArrayOfFunctionsOrFunction(
-        source,
-        createAsapEffect,
-        FIRST_ARG_EFFECT_ERROR_MESSAGE
-    ) &&
-    _assertIsFunction(
+    isDev && _assertIsFunction(
         effectFn,
         createAsapEffect,
-        SECOND_ARG_EFFECT_ERROR_MESSAGE
+        'Invalid first argument! Expected a function.'
+    ) && _assertIsOptionalBoolean(
+        scheduleInitialCall,
+        'createAsapEffect(): Invalid second argument! Expected a boolean or nothing.'
     );
 
     let task: _Task | null = null;
-    source = _coerceToFunction(source);
     
-    createEffect(() => {
-        source();
-        if (task) {
-            _scheduleAsapTask(task);
-        } else if (scheduleInitialCall) {
-            task = _createTaskObject(effectFn, undefined, getOwner());
+    onMount(() => {
+        const track = createReaction(() => _scheduleAsapTask(task!), isDev ? { name: 'createAsapEffect' } : undefined);
+        const localEffectFn = () => {
+            const cleanup = effectFn();
+            if (cleanup instanceof Function) {
+                onCleanup(cleanup)
+            }
+        }
+        
+        task = _createTaskObject(() => track(localEffectFn));
+
+        if (scheduleInitialCall) {
             _scheduleAsapTask(task);
         } else {
-            task = untrack(() => _createTaskObject(effectFn, effectFn(), getOwner()));
+            track(localEffectFn);
         }
-    });
+    })
 
     getOwner() && onCleanup(() => task && _cancelTask(task));
 }
@@ -139,71 +118,40 @@ export function createAsapEffect(source: any, effectFn: () => (() => void) | voi
  * The callback is executed in the same reactive owner in which the effect was
  * created.
  *
- * @param source Reactive source that triggers the scheduled callback.
  * @param effectFn Callback executed asynchronously whenever the source changes.
  * @param scheduleInitialCall Whether to defer the initial callback invocation
  * to the next asynchronous scheduler cycle. Defaults to `false`.
  */
-export function createAsyncEffect(source: Accessor<any>, effectFn: () => (() => void) | void, scheduleInitialCall?: boolean): void;
-/**
- * Creates an effect that is built on top of SolidJS `createEffect`, but
- * defers the execution of the provided callback asynchronously using the
- * library's Async Scheduler.
- *
- * Unlike `createEffect`, the callback is never executed synchronously after a
- * source changes. Multiple source updates occurring within the same
- * synchronous execution context are automatically coalesced into a single
- * callback invocation.
- *
- * The callback is guaranteed to execute asynchronously before the browser
- * renders the next frame.
- *
- * The initial callback is scheduled during the initial execution of the
- * owning effect. By default, it is scheduled for the current reactive cycle.
- * When `scheduleInitialCall` is `true`, the initial callback invocation is
- * deferred to the next asynchronous scheduler cycle.
- *
- * If the callback returns a cleanup function, it is invoked before the next
- * scheduled execution or when the owning reactive context is disposed.
- *
- * The callback is executed in the same reactive owner in which the effect was
- * created.
- *
- * @param sources Reactive sources that trigger the scheduled callback.
- * @param effectFn Callback executed asynchronously whenever any source changes.
- * @param scheduleInitialCall Whether to defer the initial callback invocation
- * to the next asynchronous scheduler cycle. Defaults to `false`.
- */
-export function createAsyncEffect(sources: Accessor<any>[], effectFn: () => (() => void) | void, scheduleInitialCall?: boolean): void;
-export function createAsyncEffect(source: any, effectFn: () => (() => void) | void, scheduleInitialCall?: boolean): void {
+export function createAsyncEffect(effectFn: () => (() => void) | void, scheduleInitialCall?: boolean): void {
     if (__IS_SERVER__) { return; }
-
-    isDev &&
-    _assertIsArrayOfFunctionsOrFunction(
-        source,
-        createAsyncEffect,
-        FIRST_ARG_EFFECT_ERROR_MESSAGE
-    ) &&
-    _assertIsFunction(
+    isDev && _assertIsFunction(
         effectFn,
         createAsyncEffect,
-        SECOND_ARG_EFFECT_ERROR_MESSAGE
+        'Invalid first argument! Expected a function.'
+    ) && _assertIsOptionalBoolean(
+        scheduleInitialCall,
+        'createAsyncEffect(): Invalid second argument! Expected a boolean or nothing.'
     );
 
     let task: _Task | null = null;
-    source = _coerceToFunction(source);
     
     createEffect(() => {
-        source();
-        if (task) {
-            _scheduleAsyncTask(task);
-        } else if (scheduleInitialCall) {
-            task = _createTaskObject(effectFn, undefined, getOwner());
+        const track = createReaction(() => _scheduleAsyncTask(task!), isDev ? { name: 'createAsyncEffect' } : undefined);
+        const localEffectFn = () => {
+            const cleanup = effectFn();
+            if (cleanup instanceof Function) {
+                onCleanup(cleanup)
+            }
+        }
+        
+        task = _createTaskObject(() => track(localEffectFn));
+
+        if (scheduleInitialCall) {
             _scheduleAsyncTask(task);
         } else {
-            task = untrack(() => _createTaskObject(effectFn, effectFn(), getOwner()));
+            track(localEffectFn);
         }
-    });
+    })
 
     getOwner() && onCleanup(() => task && _cancelTask(task));
 }
@@ -225,71 +173,40 @@ export function createAsyncEffect(source: any, effectFn: () => (() => void) | vo
  * The callback is executed in the same reactive owner in which the effect was
  * created.
  *
- * @param source Reactive source that triggers the scheduled callback.
  * @param effectFn Callback executed asynchronously in a microtask whenever the
  * source changes.
  */
-export function createAsapRenderEffect(source: Accessor<any>, effectFn: () => (() => void) | void): void;
-/**
- * Creates an effect that is built on top of SolidJS `createRenderEffect`, but
- * defers the execution of the provided callback to the next microtask.
- *
- * Unlike `createRenderEffect`, the callback is never executed synchronously
- * after a source changes. Multiple source updates occurring within the same
- * synchronous execution context are automatically coalesced into a single
- * callback invocation.
- *
- * The callback is executed once immediately after the owning effect is created,
- * and then after every source change. If the callback returns a cleanup
- * function, it is invoked before the next scheduled execution or when the
- * owning reactive context is disposed.
- *
- * The callback is executed in the same reactive owner in which the effect was
- * created.
- *
- * Any accessor from the provided array may trigger the scheduled callback.
- *
- * @param sources Reactive sources that trigger the scheduled callback.
- * @param effectFn Callback executed asynchronously in a microtask whenever any
- * source changes.
- */
-export function createAsapRenderEffect(sources: Accessor<any>[], effectFn: () => (() => void) | void): void;
-export function createAsapRenderEffect(source: any, effectFn: () => (() => void) | void): void {
+export function createAsapRenderEffect(effectFn: () => (() => void) | void): void {
     if (__IS_SERVER__) {
-        source = _coerceToFunction(source);
-        let cleanup: any
         createRenderEffect(() => {
-            source();
-            cleanup = untrack(() => {
-                if (typeof cleanup === 'function') { cleanup(); }
-                return effectFn();
-            });
+            const cleanup = effectFn()
+            if (cleanup instanceof Function) {
+                onCleanup(cleanup)
+            }
         });
         return;
     }
 
-    isDev &&
-    _assertIsArrayOfFunctionsOrFunction(
-        source,
-        createAsapRenderEffect,
-        FIRST_ARG_EFFECT_ERROR_MESSAGE
-    ) &&
-    _assertIsFunction(
+    isDev && _assertIsFunction(
         effectFn,
         createAsapRenderEffect,
-        SECOND_ARG_EFFECT_ERROR_MESSAGE
-    );
+        'Invalid argument! Expected a function.'
+    )
 
     let task: _Task | null = null;
-    source = _coerceToFunction(source);
-    
+    let cleanup: any
+
     createRenderEffect(() => {
-        source();
-        if (task) {
-            _scheduleAsapTask(task);
-        } else {
-            task = untrack(() => _createTaskObject(effectFn, effectFn(), getOwner()));
+        const track = createReaction(() => _scheduleAsapTask(task!), isDev ? { name: 'createAsapRenderEffect' } : undefined);
+        const localEffectFn = () => {
+            cleanup = effectFn();
+            if (cleanup instanceof Function) {
+                onCleanup(cleanup)
+            }
         }
+        
+        task = _createTaskObject(() => track(localEffectFn));
+        track(localEffectFn);
     });
 
     getOwner() && onCleanup(() => task && _cancelTask(task));
@@ -315,75 +232,78 @@ export function createAsapRenderEffect(source: any, effectFn: () => (() => void)
  *
  * The callback is executed in the same reactive owner in which the effect was
  * created.
- * @param source Reactive source that triggers the scheduled callback.
  * @param effectFn Callback executed asynchronously in a microtask whenever the
  * source changes.
  */
-export function createAsyncRenderEffect(source: Accessor<any>, effectFn: () => (() => void) | void): void;
-/**
- * Creates an effect that is built on top of SolidJS `createRenderEffect`, but
- * defers the execution of the provided callback asynchronously using the
- * library's Async Scheduler.
- *
- * Unlike `createRenderEffect`, the callback is never executed synchronously after a
- * source changes. Multiple source updates occurring within the same synchronous
- * execution context are automatically coalesced into a single callback
- * invocation.
- *
- * The callback is guaranteed to execute asynchronously before the browser
- * renders the next frame.
- *
- * The callback is executed once immediately after the owning effect is created,
- * and then after every source change. If the callback returns a cleanup
- * function, it is invoked before the next scheduled execution or when the
- * owning reactive context is disposed.
- *
- * The callback is executed in the same reactive owner in which the effect was
- * created.
- * 
- * @param sources Reactive sources that trigger the scheduled callback.
- * @param effectFn Callback executed asynchronously in a microtask whenever any
- */
-export function createAsyncRenderEffect(sources: Accessor<any>[], effectFn: () => (() => void) | void): void;
-export function createAsyncRenderEffect(source: any, effectFn: () => (() => void) | void): void {
-    if (__IS_SERVER__) {
-        source = _coerceToFunction(source);
-        let cleanup: any;
+export function createAsyncRenderEffect(effectFn: () => (() => void) | void): void {
+if (__IS_SERVER__) {
         createRenderEffect(() => {
-            source();
-            cleanup = untrack(() => {
-                if (typeof cleanup === 'function') { cleanup(); }
-                return effectFn();
-            });
+            const cleanup = effectFn()
+            if (cleanup instanceof Function) {
+                onCleanup(cleanup)
+            }
         });
         return;
     }
-    
-    isDev &&
-    _assertIsArrayOfFunctionsOrFunction(
-        source,
-        createAsyncRenderEffect,
-        FIRST_ARG_EFFECT_ERROR_MESSAGE
-    ) &&
-    _assertIsFunction(
+
+    isDev && _assertIsFunction(
         effectFn,
         createAsyncRenderEffect,
-        SECOND_ARG_EFFECT_ERROR_MESSAGE
+        'Invalid argument! Expected a function.'
     );
 
     let task: _Task | null = null;
-    source = _coerceToFunction(source);
-    
+    let cleanup: any
+
     createRenderEffect(() => {
-        source();
-        if (task) {
-            _scheduleAsyncTask(task);
-        } else {
-            task = untrack(() => _createTaskObject(effectFn, effectFn(), getOwner()));
+        const track = createReaction(() => _scheduleAsyncTask(task!), isDev ? { name: 'createAsyncRenderEffect' } : undefined);
+        const localEffectFn = () => {
+            cleanup = effectFn();
+            if (cleanup instanceof Function) {
+                onCleanup(cleanup);
+            }
         }
+        
+        task = _createTaskObject(() => track(localEffectFn));
+        track(localEffectFn);
     });
 
     getOwner() && onCleanup(() => task && _cancelTask(task));
+}
+
+/**
+ * Creates a lazily initialized memo.
+ *
+ * Unlike {@link createMemo}, the underlying memo is not created immediately.
+ * It is created when the returned accessor is called for the first time.
+ *
+ * Once initialized, subsequent calls return the value of the same memo.
+ *
+ * @param fn The function used to compute the memo value.
+ *
+ * @returns A lazy accessor that initializes the memo on its first read and
+ * subsequently returns its current value.
+ */
+export function createLazyMemo<Next extends Prev, Prev = Next>(fn: EffectFunction<undefined | NoInfer<Prev>, Next>): Accessor<Next>;
+/**
+ * Creates a lazily initialized memo with an initial value.
+ *
+ * Unlike {@link createMemo}, the underlying memo is not created immediately.
+ * It is created when the returned accessor is called for the first time.
+ *
+ * Once initialized, subsequent calls return the value of the same memo.
+ *
+ * @param fn The function used to compute the memo value.
+ * @param value The initial value passed to the memo computation.
+ * @param options Options used to configure the underlying memo.
+ *
+ * @returns A lazy accessor that initializes the memo on its first read and
+ * subsequently returns its current value.
+ */
+export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(fn: EffectFunction<Init | Prev, Next>, value: Init, options?: MemoOptions<Next>): Accessor<Next>;
+export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(fn: EffectFunction<Init | Prev, Next>, value?: Init, options?: MemoOptions<Next>): Accessor<Next> {
+    let memo: Accessor<Next> | null = null;
+    return () => (memo ??= createMemo(fn as any, value, options), memo())
 }
 
 function _createCssAnimationHandler(el: Element): _CssAnimationHandler {
@@ -467,7 +387,7 @@ export function createPresence<T>(source: Accessor<T>): [Accessor<T>, (element: 
 
     let handler: _CssAnimationHandler | null = null;
 
-    createAsapEffect(source, () => {
+    createAsapEffect(() => {
         if (!source() && handler && handler.isAnimating()) {
             handler.onDone(() => setState(source));
         } else {

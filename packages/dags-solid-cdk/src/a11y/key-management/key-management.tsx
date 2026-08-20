@@ -734,7 +734,7 @@ const enum _OperableKey {
 
 }
 
-const _KEY_MANAGER = Symbol('KeyManager');
+const _KEY_MANAGER = /** @__PURE__ */ Symbol('KeyManager');
 
 const _containerBinding: WeakMap<Element, KeyManager> = isDev ? new WeakMap() : null!;
 
@@ -895,7 +895,6 @@ export function deferAddItem(manager: KeyManager, item: KeyManagerItem): void {
  * @see {@link KeyManager}
  */
 export function keyManagerBuilder(): KeyManagerBuilder {
-
 
     const config: _KeyManagerConfig = {
         allowedModifierKeys: [],
@@ -1094,6 +1093,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
 export const _UNWRAP_SKIP_PREDICATE: symbol = /* @__PURE__ */ Symbol();
 
 let _isInHandlerContext = false;
+let _currentKey: string | undefined = undefined;
 
 /**
  * Determines whether the current execution is taking place inside a
@@ -1107,6 +1107,18 @@ let _isInHandlerContext = false;
  */
 export function isInKeyManagerHandlerContext(): boolean {
     return _isInHandlerContext;
+}
+
+/**
+ * Returns the `KeyboardEvent.key` value of the key currently being handled
+ * by the active key manager.
+ *
+ * Returns `undefined` when called outside of a key handling context.
+ *
+ * @returns The currently handled key, or `undefined` if no key is being handled.
+ */
+export function currentHandledKey(): string | undefined {
+    return _currentKey
 }
 
 /** @internal */
@@ -1293,10 +1305,12 @@ export class _KeyManagerImpl implements KeyManager {
 
             let result: boolean;
             _isInHandlerContext = true;
+            _currentKey = e.key;
             try {
                 result = keyboardHandler(this, e);
             } finally {
                 _isInHandlerContext = false;
+                _currentKey = undefined;
             }
             if (isDev) {
                 _assertIsBoolean(

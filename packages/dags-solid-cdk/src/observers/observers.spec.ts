@@ -1,6 +1,13 @@
 import { Mock } from 'vitest';
 import { _MockResizeObserver } from '../test-utils/moc-resize-observer';
-import { type observeResizing as cdkObserveResizing, type observerMutations as cdkObserverMutations, type observeBatchedMutations as cdkObserveBatchedMutations, type CdkBatchedMutationRecord, CdkMutationRecord } from './observers'
+import { 
+    type observeResizing as cdkObserveResizing,
+    type observerMutations as cdkObserverMutations,
+    type observeBatchedMutations as cdkObserveBatchedMutations,
+    type disableShadowDomScanning as cdkDisableShadowDomScanning,
+    type CdkBatchedMutationRecord, 
+    type CdkMutationRecord 
+} from './observers'
 import type { Accessor, createRoot as solidJsCreateRoot, createSignal as solidJsCreateSignal, createEffect as solidJsCreateEffect } from 'solid-js'
 
 type _MockEnvironmentController<T> = { 
@@ -713,9 +720,11 @@ describe('Observers', () => {
                 let pendingImmediateSet: (() => void)[] = [];
                 let pendingMicrotask: (() => void)[] = [];
                 let spy1: Mock;
-                let spy3: Mock;
+                let spy2: Mock;
+                let disableShadowDomScanning: typeof cdkDisableShadowDomScanning;
+                let enableScanning: () => void;
 
-                function flushMicrotask(): void {
+                function flushMicrotasks(): void {
                     while (pendingMicrotask.length) {
                         pendingMicrotask.shift()!();
                     }
@@ -735,9 +744,14 @@ describe('Observers', () => {
                     }
                 }
 
-                beforeEach(() => advanceTime = true);
+                beforeEach(() => {
+                    disableShadowDomScanning = observersModule.disableShadowDomScanning;
+                    enableScanning = observersModule._enableScanning;
+                    advanceTime = true
+                });
 
                 afterEach(() => {
+                    enableScanning();
                     if (pendingImmediateSet.length) {
                         throw new Error('There is still pending immediate event!');
                     }
@@ -751,15 +765,42 @@ describe('Observers', () => {
                         ((fn: (...args: any[]) => void, ...args: any[]) => pendingImmediateSet.push(() => fn(...args))) as any
                     );
                     
-                    spy3 = vitest.spyOn(globalThis, 'queueMicrotask').mockImplementation((fn) => pendingMicrotask.push(fn))
+                    spy2 = vitest.spyOn(globalThis, 'queueMicrotask').mockImplementation((fn) => pendingMicrotask.push(fn));
                 });
 
                 afterAll(() => {
                     spy1.mockRestore();
-                    spy3.mockRestore();
+                    spy2.mockRestore();
                 });
 
-                it('Should scan for shadow roots concurrently.', async () => {
+                it('Should scan for shadow roots concurrently in a document.', async () => {
+                    const container = document.body.appendChild(document.createElement('div'));
+                    const child = container.appendChild(document.createElement('div'));
+                    let latestRecords: readonly CdkMutationRecord[] | null = null;
+
+                    child.attachShadow({ mode: 'open' });
+                    advanceTime = true;
+
+                    const mutation = inRoot(() => observeMutations(container));
+
+                    subscribeEffect(() => latestRecords = mutation());
+                    fireEffectsInitialization();
+
+                    await Promise.resolve(); // JsDom Mutation observer is build on 'Promise'
+                    flushMicrotasks();
+                    expect(latestRecords).toBeNull();
+
+                    advanceTime = false;
+                    flushImmediateSet();
+                    flushMicrotasks();
+                    expect(latestRecords).not.toBeNull();
+                    expect(latestRecords!.length).toBe(1);
+                    expect(latestRecords![0].type).toBe('shadowDiscover');
+                    expect(latestRecords![0].target).toBe(child);
+                    assertCollections(latestRecords![0].addedNodes, [ child.shadowRoot ]);
+                });
+
+                it('Should scan for shadow roots concurrently for added nodes.', async () => {
                     const container = document.body.appendChild(document.createElement('div'));
                     const child1 = document.createElement('div');
                     const child2 = document.createElement('div');
@@ -775,17 +816,63 @@ describe('Observers', () => {
                     container.append(child1, child2);
 
                     await Promise.resolve(); // JsDom Mutation observer is build on 'Promise'
-                    flushMicrotask();
-                    expect(latestRecords).not.toBeNull()
+                    flushMicrotasks();
+                    expect(latestRecords).not.toBeNull();
                     expect(latestRecords!.length).toBe(1);
                     assertCollections(latestRecords![0].addedNodes, [ child1, child2 ]);
 
                     advanceTime = false;
                     flushImmediateSet();
-                    flushMicrotask();
+                    flushMicrotasks();
                     expect(latestRecords!.length).toBe(2);
                     expect(latestRecords!.map((r) => r.type)).toEqual([ 'shadowDiscover', 'shadowDiscover' ]);
                     assertCollections(latestRecords!.map((r) => r.target), [ child1, child2 ]);
+                    assertCollections(latestRecords![0].addedNodes, [ child1.shadowRoot ]);
+                    assertCollections(latestRecords![1].addedNodes, [ child2.shadowRoot ]);
+                });
+
+                it('Should not scan for shadow roots concurrently in a document if scanning is disabled.', async () => {
+                    disableShadowDomScanning();
+                    const container = document.body.appendChild(document.createElement('div'));
+                    const child = container.appendChild(document.createElement('div'));
+                    let latestRecords: readonly CdkMutationRecord[] | null = null;
+
+                    child.attachShadow({ mode: 'open' });
+                    advanceTime = true;
+
+                    const mutation = inRoot(() => observeMutations(container));
+
+                    subscribeEffect(() => latestRecords = mutation());
+                    fireEffectsInitialization();
+
+                    await Promise.resolve(); // JsDom Mutation observer is build on 'Promise'
+                    flushMicrotasks();
+                    expect(latestRecords).toBeNull();
+                    expect(pendingImmediateSet.length).toBe(0);
+                });
+
+                it('Should not scan for shadow roots concurrently for added nodes if scanning is disabled.', async () => {
+                    disableShadowDomScanning();
+                    const container = document.body.appendChild(document.createElement('div'));
+                    const child1 = document.createElement('div');
+                    const child2 = document.createElement('div');
+                    const mutation = inRoot(() => observeMutations(container));
+                    let latestRecords: readonly CdkMutationRecord[] | null = null;
+                    
+                    subscribeEffect(() => latestRecords = mutation());
+                    fireEffectsInitialization();
+                    
+                    child1.attachShadow({ mode: 'open' });
+                    child2.attachShadow({ mode: 'open' }); 
+                    advanceTime = true;
+                    container.append(child1, child2);
+
+                    await Promise.resolve(); // JsDom Mutation observer is build on 'Promise'
+                    flushMicrotasks();
+                    expect(latestRecords).not.toBeNull();
+                    expect(latestRecords!.length).toBe(1);
+                    assertCollections(latestRecords![0].addedNodes, [ child1, child2 ]);
+                    expect(pendingImmediateSet.length).toBe(0);
                 });
 
                 it('Should finalize internals concurrently when observation target is removed from DOM.', async () => {
@@ -802,7 +889,7 @@ describe('Observers', () => {
 
                     div.remove();
                     await Promise.resolve();
-                    flushMicrotask();
+                    flushMicrotasks();
                     privates = getPrivates();
 
                     expect(privates.emitMutationRecordsTask).not.toBeNull();
@@ -814,7 +901,7 @@ describe('Observers', () => {
 
                     advanceTime = false;
                     flushImmediateSet();
-                    flushMicrotask();
+                    flushMicrotasks();
                     privates = getPrivates();
 
                     expect(privates.emitMutationRecordsTask).toBeNull();

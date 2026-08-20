@@ -1,9 +1,9 @@
 import { Accessor, Component, createEffect, createRoot, createSignal, getOwner,runWithOwner, Setter } from "solid-js";
-import { _defaultGetAccName, _KeyManagerImpl, _UNWRAP_SKIP_PREDICATE, deferAddItem, DOMElementKeyManagerItem, FocusableDOMElementKeyManagerItem, focusableKeyManagerItem, horizontalLtrOrientationKeyboardHandler, horizontalRtlOrientationKeyboardHandler, isInKeyManagerHandlerContext, KeyManager, KeyManagerBuilder, keyManagerBuilder, keyManagerItem, KeyManagerItem, ProvideAccessabilityNameAccessor, verticalOrientationKeyboardHandler } from "./key-manager";
+import { _defaultGetAccName, _KeyManagerImpl, _UNWRAP_SKIP_PREDICATE, currentHandledKey, deferAddItem, DOMElementKeyManagerItem, FocusableDOMElementKeyManagerItem, focusableKeyManagerItem, horizontalLtrOrientationKeyboardHandler, horizontalRtlOrientationKeyboardHandler, isInKeyManagerHandlerContext, KeyManager, KeyManagerBuilder, keyManagerBuilder, keyManagerItem, KeyManagerItem, ProvideAccessabilityNameAccessor, verticalOrientationKeyboardHandler } from "./key-management";
 import { render } from "solid-js/web";
 import { isFocused, monitorFocusOrigin } from "../focus-management/focus-management";
 
-vitest.mock(import('./key-manager'), (importOgModule) => {
+vitest.mock(import('./key-management'), (importOgModule) => {
     (globalThis as any).__IS_SERVER__ = false;
     return importOgModule()
 })
@@ -5592,7 +5592,7 @@ describe('Key manager', () => {
 
         it('Should return true if called inside a KeyManager keyboard handler triggered by a keyboard event.', () => {
             const log: boolean[] = [];
-            const manager = createManager((config) => config.withKeyboardHandler((m, e) => {
+            const manager = createManager((config) => config.withKeyboardHandler(() => {
                 log.push(isInKeyManagerHandlerContext());
                 return true;
             }));
@@ -5606,7 +5606,58 @@ describe('Key manager', () => {
             expect(log).toEqual([ false, true, false ]);
         });
 
-    })
+        it('Should return false outside the KeyManager keyboard handler even if the handler throws an error.', () => {
+            const manager = createManager((config) => config.withKeyboardHandler((m, e) => {
+                throw new Error();
+            }));
+            const containerEl = document.body.appendChild(document.createElement('div'));
+            const errorHandler = (e: ErrorEvent) => e.preventDefault();
+
+            manager.bind(containerEl);
+            window.addEventListener('error', errorHandler);
+
+            containerEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'A', bubbles: true }));
+            expect(isInKeyManagerHandlerContext()).toBe(false);
+        })
+
+    });
+
+    describe('currentHandledKey()', () => {
+
+        it('Should return the key currently being handled by the key manager\'s keyboard handler.', () => {
+            const log: string[] = []
+            const manager = createManager((config) => config.withKeyboardHandler((_, e) => {
+                log.push(e.key);
+                return false
+            }));
+            const containerEl = document.body.appendChild(document.createElement('div'))
+            manager.bind(containerEl);
+
+            expect(currentHandledKey()).toBeUndefined();
+            
+            containerEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'A', bubbles: true }));
+            containerEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'B', bubbles: true }));
+            containerEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'C', bubbles: true }));
+
+            expect(log).toEqual([ 'A', 'B', 'C' ]);
+            expect(currentHandledKey()).toBe(undefined);
+        });
+
+        it('Should return undefined outside the KeyManager keyboard handler even if the handler throws an error.', () => {
+            const manager = createManager((config) => config.withKeyboardHandler((m, e) => {
+                throw new Error();
+            }));
+            const containerEl = document.body.appendChild(document.createElement('div'));
+            const errorHandler = (e: ErrorEvent) => e.preventDefault();
+
+            manager.bind(containerEl);
+            window.addEventListener('error', errorHandler);
+
+            containerEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'A', bubbles: true }));
+            expect(currentHandledKey()).toBeUndefined();
+        });
+        
+    });
 
     describe('class DOMElementKeyManagerItem()', () => {
 

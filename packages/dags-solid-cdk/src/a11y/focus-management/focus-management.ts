@@ -1,10 +1,10 @@
-import { Accessor, createComputed, createEffect, createMemo, createSignal, getOwner, onCleanup, onMount } from "solid-js";
-import { _cancelTask, _createTaskObject, _scheduleAsapTask, } from "../../internals/schedulers";
+import { Accessor, createComputed, createEffect, createMemo, createSignal, getOwner, onCleanup, onMount, Signal } from "solid-js";
+import { _cancelTask, _createTaskObject, _scheduleAsapTask, _Task, } from "../../internals/schedulers";
 import { normalizePassiveListenerOptions } from "../../platform/platform";
 import { isDev } from "solid-js/web";
 import { _assertIsOptionalBoolean } from "../../internals/arg-assertions";
-import { CdkBatchedMutationRecord, observeBatchedMutations } from "../../observers/observers";
-import { createAsapEffect } from "../../signals/signals";
+import { CdkBatchedMutationRecord, observeBatchedMutations, disableShadowDomScanning } from "../../observers/observers";
+import { createAsapEffect, createLazyMemo } from "../../signals/signals";
 import { addDelegatedEventListener } from "../../event-delegation/event-delegation";
 
 /**
@@ -34,8 +34,16 @@ interface _CustomNodeIterator {
     nextNode(): FocusableElement | null;
 }
 
+interface _ElementStackRef {
+    ref: WeakRef<FocusableElement>;
+    next: _ElementStackRef | null;
+    prev: _ElementStackRef | null;
+}
+
 let _origin: 'program' | 'keyboard' | 'pointer' = 'program';
 let _stopped: 'pointerdown' | 'keydown' | '' = ''
+let _focusStackHead: _ElementStackRef | null = null;
+let _focusStackTail: _ElementStackRef | null = null;
 const _focusOrigins = new WeakMap<Element, Accessor<'program' | 'keyboard' | 'pointer' | undefined>>();
 const _deepFocusOrigins = new WeakMap<Element, Accessor<'program' | 'keyboard' | 'pointer' | undefined>>();
 
@@ -44,7 +52,56 @@ function _assertIsValidArgument(target: any, caller: Function, firstOne: boolean
     throw new Error(
         `${caller.name}(): Invalid${firstOne ? ' first ' : ' '}argument! It must be a function returning a DOM Element or a DOM Element instance (e.g. HTMLElement, SVGElement, etc.).`
     );
-} 
+}
+
+function _pushElement(element: FocusableElement): _ElementStackRef {
+    const stackRef: _ElementStackRef = {
+        ref: new WeakRef(element),
+        next: null,
+        prev: _focusStackTail,
+    }
+
+    if (_focusStackTail) {
+        _focusStackTail.next = stackRef
+    } else {
+        _focusStackHead = stackRef
+    }
+
+    _focusStackTail = stackRef;
+
+    return stackRef;
+}
+
+function _unlinkElement(elementRef: _ElementStackRef): _ElementStackRef {
+    const { next, prev } = elementRef;
+
+    if (prev) {
+        prev.next = next
+    } else {
+        _focusStackHead = next
+    }
+
+    if (next) {
+        next.prev = prev;
+    } else {
+        _focusStackTail = prev
+    }
+
+    elementRef.next = null;
+    elementRef.prev = null;
+
+    return elementRef;
+}
+
+function _tryRestorePreviousFocus(): void {
+    while (_focusStackHead) {
+        const element = _unlinkElement(_focusStackTail!).ref.deref();
+        if (element) {
+            element.focus();
+            if (isFocused(element)) { return; }
+        }
+    }
+}
 
 const _resetTask = _createTaskObject(() => {
     _origin = 'program';
@@ -314,18 +371,25 @@ export function monitorFocusOrigin(target: any, checkDescendants: boolean = fals
     isDev && element && _assertIsValidArgument(element, caller, caller === monitorFocusOrigin);
     
     if (element) {
-        return _monitorFocus(element, checkDescendants);
+        const origin = _monitorFocus(element, checkDescendants);
+        return () => origin();
     } else {
         isDev && !getOwner() && _assertIsValidArgument(element, caller, caller === monitorFocusOrigin)
-        const [getOrigin, setOrigin] = createSignal<'program' | 'keyboard' | 'pointer' | undefined>(undefined);
+        let onMountSignal: Signal<boolean> | null = createSignal(false);
+        let origin: Accessor<'program' | 'keyboard' | 'pointer' | undefined> | null;
+        
         onMount(() => {
-            element = target() as Element
+            element = target() as Element;
             isDev && _assertIsValidArgument(element, caller, caller === monitorFocusOrigin);
-            const origin = _monitorFocus(element, checkDescendants);
-            createComputed(() => setOrigin(origin()));
-            checkDescendants ? _deepFocusOrigins.set(element!, getOrigin) : _focusOrigins.set(element, getOrigin);
+            origin = _monitorFocus(element, checkDescendants);
+            onMountSignal![1](true);
+            onMountSignal = null;
         });
-        return getOrigin;
+
+        return () => {
+            if (onMountSignal) { onMountSignal[0](); }
+            return origin ? origin() : undefined;
+        }
     }
 }
 
@@ -646,7 +710,7 @@ export function _eachPotentialTabbable(target: Node, fn: (item: _PotentialTabbab
             }
 
             if (potentialFocusable) {
-                fn(potentialFocusable)
+                fn(potentialFocusable);
             }
         } else if ('tabIndex' in element && typeof element.tabIndex === 'number' && element.tabIndex > -1) {
             fn({ element, priority: element.tabIndex });
@@ -678,8 +742,18 @@ function _containsFragileAttributes(attrNames: readonly string[] | null): boolea
  * The trap automatically reacts to changes within the DOM branch and updates
  * its internal list of potential tabbable elements accordingly.
  *
+ * Open shadow DOM is supported and is automatically discovered as part of the
+ * DOM observation process. Shadow roots discovered after their host is added
+ * to the DOM are incorporated into the focus trap asynchronously.
+ *
+ * Calling {@link disableShadowDomScanning} disables automatic Shadow DOM
+ * discovery. As a result, tabbable elements inside undiscovered shadow roots
+ * are not included in the focus trap.
+ *
  * @param element The element that defines the boundary within which focus is
  * trapped.
+ *
+ * @see {@link disableShadowDomScanning}
  */
 export function focusTrap(element: Element): void {
     if (__IS_SERVER__) {
@@ -696,15 +770,15 @@ export function focusTrap(element: Element): void {
     const mutationRecordSource = observeBatchedMutations(element);
     const docMutationRecordSource = observeBatchedMutations(document)
     const hasFocusedElementSource = observeHasFocusedElement(element);
-    const currentFocusedSource = createMemo(() => {
+    const currentFocusedSource = createLazyMemo(() => {
         if (hasFocusedElementSource()) {
             return getFocusedElement();
         } else {
             return null;
         }
     });
-    const options = { schedule: true }
-    const hasInertAncestorSource = createMemo(() => {
+
+    const hasInertAncestorSource = createLazyMemo(() => {
         const record = docMutationRecordSource();
         if (!record || !record.attributeChange) {
             return false;
@@ -724,10 +798,10 @@ export function focusTrap(element: Element): void {
         } while (index > -1);
 
         return false;
-    }, options);
-    const isConnectedSource = createMemo(() => {
+    });
+    const isConnectedSource = createLazyMemo(() => {
         docMutationRecordSource();
-        return element.isConnected
+        return element.isConnected;
     })
     
     let items: _PotentialTabbable[] | null = null;
@@ -736,16 +810,17 @@ export function focusTrap(element: Element): void {
     let currentFocused: Element | null = null;
     let callback: ((item: _PotentialTabbable) => void) | null = null;
 
-    createAsapEffect([mutationRecordSource, hasInertAncestorSource, isConnectedSource, currentFocusedSource], () => {
-        if (hasInertAncestorSource() || !element.isConnected) {
+    createAsapEffect(() => {
+        const newRecord = mutationRecordSource();
+        const newFocusedEl = currentFocusedSource();
+
+        if (hasInertAncestorSource() || !isConnectedSource()) {
             currentFocused = null;
             focusedIndex = -1;
             items = null;
             return;
         }
 
-        const newRecord = mutationRecordSource();
-        const newFocusedEl = currentFocusedSource();
         if (
             !items ||
             (mutationRecord !== newRecord && (newRecord!.addedNodes || _containsFragileAttributes(newRecord!.attributeNames)))
@@ -863,4 +938,77 @@ export function focusTrap(element: Element): void {
     })
     
     onCleanup(remove);
+}
+
+/**
+ * Captures keyboard focus on the specified element for the lifetime of the
+ * current owning reactive context.
+ *
+ * If the element is connected to the document DOM, it is focused immediately.
+ * If it is not yet connected, focusing is deferred until the element is
+ * connected.
+ *
+ * The element that was focused before the capture is remembered. When the owning
+ * context is disposed, focus is restored to that element if it is still available
+ * and can receive focus.
+ *
+ * @param element The element to focus and keep as the active focus target.
+ *
+ * @throws If called in a server environment.
+ * @throws If no owning reactive context is available.
+ * @throws If the provided value is not an Element.
+ * @throws If the element does not implement the `focus()` method.
+ */
+export function focusAutoCapture(element: Element): void {
+    if (__IS_SERVER__) {
+        throw new Error('focusAutoCapture(): This function cannot be used in a server environment!');
+    }
+    if (isDev) {
+        if (!getOwner()) {
+            throw new Error('focusAutoCapture(): Owning context is required!');
+        }
+        if (!(element instanceof Element)) {
+            throw new Error('focusAutoCapture(): Invalid argument! Expected an Element instance.');
+        }
+        if (!_isFocusable(element)) {
+            throw new Error('Provided element does not implement focus() method.');
+        }
+    }
+
+    let task: _Task | null = null;
+    let prevFocusedRef: _ElementStackRef | null = null;
+
+    if (element.isConnected) {
+        const prevFocused = getFocusedElement() as FocusableElement | null;
+        if (prevFocused) {
+            prevFocusedRef = _pushElement(prevFocused);
+        }
+        (element as FocusableElement).focus();
+        if (isDev && !isFocused(element)) {
+            console.error('focusAutoCapture(): Failed to focus the provided element!')
+        }
+    } else {
+        task = _createTaskObject(() => {
+            task = null;
+            if (!element.isConnected) {
+                throw new Error('focusAutoCapture(): Provided element is not connected to the document DOM!');
+            }
+            const prevFocused = getFocusedElement() as FocusableElement | null;
+            if (prevFocused) {
+                prevFocusedRef = _pushElement(prevFocused);
+            }
+            (element as FocusableElement).focus();
+            if (isDev && !isFocused(element)) {
+                console.error('focusAutoCapture(): Failed to focus the provided element!');
+            }
+        });
+        _scheduleAsapTask(task);
+    }
+
+    onCleanup(() => {
+        task && _cancelTask(task);
+        if (prevFocusedRef && prevFocusedRef === _focusStackTail) {
+            _tryRestorePreviousFocus();
+        }
+    });
 }

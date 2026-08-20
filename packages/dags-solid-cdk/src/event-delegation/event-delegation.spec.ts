@@ -19,8 +19,8 @@ describe('addDelegatedEventListener()', () => {
         return Array.from(listeners.get(type)?.values() || []).reduce((prev, notifier) => prev + notifier.count(), 0);
     }
 
-    function addDelegatedEventListener(target: Element, type: string, listener: (e: Event) => void) {
-        const remove = ogAddDelegatedEventListener(target, type, listener);
+    function addDelegatedEventListener<T extends Event = Event>(target: Element, type: string, listener: (e: T) => void) {
+        const remove = ogAddDelegatedEventListener<T>(target, type, listener);
         disposeBag.push(remove);
         return remove;
     }
@@ -244,4 +244,21 @@ describe('addDelegatedEventListener()', () => {
 
         window.removeEventListener('error', errorHandler);
     });
+
+    it('Should work across shadow dom boundaries.', () => {
+        const log: string[] = [];
+        const parent = document.body.appendChild(document.createElement('div'));
+        const shadowRoot = parent.attachShadow({ mode: 'open' });
+        const child = shadowRoot.appendChild(document.createElement('div'));
+
+        addDelegatedEventListener<KeyboardEvent>(parent, 'keydown', (e) => {
+            log.push(e.key);
+        });
+
+        child.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'A', composed: true }));
+        child.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'B', composed: true }));
+        child.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'C', composed: true }));
+
+        expect(log).toEqual([ 'A', 'B', 'C' ])
+    })
 });
