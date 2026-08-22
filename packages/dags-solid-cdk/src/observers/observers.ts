@@ -9,6 +9,7 @@
 import { Accessor, createComputed, createMemo, createSignal, getOwner, onCleanup, onMount, Setter, Signal } from "solid-js";
 import { isDev } from "solid-js/web";
 import { _cancelTask, _createTaskObject, _scheduleAsapTask, _scheduleConcurrentTask, _Task } from "../internals/schedulers";
+import { _assertIsInOwningContext } from "../internals/common-assertions";
 
 /**
  * Configuration options for {@link observeResizing}.
@@ -260,7 +261,7 @@ export function _getPrivates() {
 }
 
 function _assertValidObservationTarget(target: any, includeDoc: boolean, deep: boolean, caller: Function): true {
-    if (includeDoc && target instanceof Document) { return true }
+    if (includeDoc && target instanceof Document) { return true; }
     if (
         target instanceof Element ||
         typeof target === 'function' ||
@@ -279,11 +280,6 @@ function _assertValidObservationTarget(target: any, includeDoc: boolean, deep: b
     }
 
     throw new Error(message);
-}
-
- function _assertIsInOwningContext(caller: Function): true {
-    if (getOwner()) { return true; }
-    throw new Error(`${caller.name}(): An owning context is required!`);
 }
 
 function _pushSetter<T>(list: _SetterList<T>, setterRef: Setter<T> | _SetterRef<T>): _SetterRef<T> {
@@ -517,6 +513,9 @@ function _removeShadow(node: Node): void {
             _mutableShadowHosts!.get(el)!.disconnect();
             _mutableShadowHosts!.delete(el);
         }
+        if (_mutableShadowHosts!.size) { continue; }
+        _mutableShadowHosts = null;
+        return;
     }
 
     if (entry) {
@@ -532,6 +531,11 @@ function _removeShadow(node: Node): void {
                     entry![1].disconnect();
                     _mutableShadowHosts.delete(el);
                 }
+                if (_mutableShadowHosts!.size) { continue; }
+                _mutableShadowHosts = null;
+                _unlinkMutationTask(mutationTask);
+
+                return;
             } while ((entry = entries.next().value || null) && performance.now() - startTime < 4);
 
             if (entry) {
@@ -540,30 +544,28 @@ function _removeShadow(node: Node): void {
             } else {
                 _unlinkMutationTask(mutationTask);
             }
-
-            if (_mutableShadowHosts!.size) { return; }
-            _mutableShadowHosts = null;
         })
         const mutationTask = _pushMutationTask(task);
         _scheduleConcurrentTask(task);
         return;
     }
-
-    if (_mutableShadowHosts!.size) { return; }
-    _mutableShadowHosts = null;
 }
 
-function _removeSetters(node: Node): void {
+/** Returns true if the setter count drops to zero and the mutation observer has been finalized. */
+function _removeSetters(node: Node): boolean {
     const entries = _mutableElementSetters!.entries();
     const startTime = _dispatchingMutations ? _startTime : performance.now();
     const timeBudget = _dispatchingMutations ? 12 : 4;
 
-    let entry: [Element, _SettersRef<CdkMutationRecord> ]| null
+    let entry: [Element, _SettersRef<CdkMutationRecord> ] | null;
 
-    while ((entry = entries.next().value || null) && performance.now() - startTime < timeBudget) {
+    while ((entry = entries.next().value || null) && (_scanningDisabled || performance.now() - startTime < timeBudget)) {
         const el = entry[0];
         if (node.contains(el)) {
             _mutableElementSetters!.delete(el);
+            if (_mutableElementSetters!.size) { continue; }
+            _finalizeMutationObserver();
+            return true;
         }
     }
 
@@ -576,6 +578,9 @@ function _removeSetters(node: Node): void {
                 if (node.contains(el)) {
                     _mutableElementSetters!.delete(el);
                 }
+                if (_mutableElementSetters!.size) { continue; }
+                _finalizeMutationObserver();
+                return;
             } while ((entry = entries.next().value || null) && performance.now() - startTime < 4);
 
             if (entry) {
@@ -584,46 +589,40 @@ function _removeSetters(node: Node): void {
             } else {
                 _unlinkMutationTask(mutationTask);
             }
-
-            if(_mutableElementSetters!.size) { return; }
-            _finalizeMutationObserver();
         });
         const mutationTask = _pushMutationTask(task);
-        _scheduleConcurrentTask(task)
-        return;
+        _scheduleConcurrentTask(task);
     }
 
-    if(_mutableElementSetters!.size) { return; }
-    _finalizeMutationObserver();
+    return false;
 }
 
-function _scanForRemove(list: ArrayLike<Node> & Iterable<Node>): void {
-    if (!_mutableElementSetters) {
-        return;
-    }
+/**
+ * Scans removed nodes and removes associated mutation observers and setters.
+ *
+ * @returns `true` if scanning caused the mutation observer to be finalized.
+ */
+function _scanForRemove(list: ArrayLike<Node> & Iterable<Node>): boolean {
     const startTime = performance.now();
-    const length = list.length
+    const length = list.length;
 
     let i = 0;
 
     while (i < length && (_scanningDisabled || performance.now() - startTime < 12)) {
-        const node = list[i]
+        const node = list[i];
         _mutableShadowHosts && _removeShadow(node);
-        _removeSetters(node)
+        if (_removeSetters(node)) { return true; }
         i++;
     }
 
     if (i < length) {
         const task = _createTaskObject(() => {
-            if (!_mutableElementSetters) {
-                return;
-            }
             const startTime = performance.now();
 
             while (i < length && performance.now() - startTime < 4) {
-                const node = list[i]
+                const node = list[i];
                 _mutableShadowHosts && _removeShadow(node);
-                _removeSetters(node)
+                if (_removeSetters(node)) { return; }
                 i++;
             }
             if (i < length) {
@@ -635,6 +634,8 @@ function _scanForRemove(list: ArrayLike<Node> & Iterable<Node>): void {
         const mutationTask = _pushMutationTask(task);
         _scheduleConcurrentTask(task);
     }
+
+    return false;
 }
 
 
@@ -651,12 +652,11 @@ function _dispatchMutationRecords(records: CdkMutationRecord[]) {
                 _scanForShadows(record.addedNodes);
             }
     
-            if (record.removedNodes.length) {
-                _scanForRemove(record.removedNodes);
+            if (record.removedNodes.length && _scanForRemove(record.removedNodes)) {
+                _dispatchingMutations = false;
+                return;
             }
         }
-
-        if (!_mutableElementSetters) { return; }
 
         let node: Node | null = record.target;
         
@@ -692,8 +692,7 @@ function _initializeMutationObserver(): void {
     _mutableElementSetters = new Map();
     _mutationObserver = new MutationObserver(_dispatchMutationRecords);
     _emitMutationRecordsTask = _createTaskObject(() => {
-        if (!_mutableElementSetters) { return; }
-        for (const [_, settersRef] of _mutableElementSetters) {
+        for (const [_, settersRef] of _mutableElementSetters!) {
             const setterList = settersRef[0];
             const records = settersRef[1];
             if (records) {
@@ -710,9 +709,9 @@ function _initializeMutationObserver(): void {
         _shadowDiscoverRecords = [];
         _dispatchMutationRecords(records);
     });
-    _mutationObserver.observe(document, _mutableObserverOptions ??= { attributes: true, childList: true, subtree: true, characterData: true });
+    _mutationObserver.observe(document, _mutableObserverOptions = { attributes: true, childList: true, subtree: true, characterData: true });
     if (_scanningDisabled) { return; }
-    _aggregateShadows(document);
+    _aggregateShadows(document.body);
 }
 
 function _finalizeMutationObserver(): void {
@@ -1230,7 +1229,7 @@ export function observeResizing(target: Element | (() => Element) | ObserveEleme
         isDev && !getOwner() && _assertValidObservationTarget(element, false, false, observeResizing);
         let onMouthSignal: Signal<boolean> | null = createSignal(false);
         let entry: Accessor<ResizeObserverEntry | null> | null = null;
-        
+
         onMount(() => {
             element = elGetter()!;
             isDev && _assertValidObservationTarget(element, false, false, observeResizing);

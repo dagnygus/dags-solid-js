@@ -778,17 +778,39 @@ describe('Signals', () => {
 
         describe('createLazyMemo()', () => {
             let createLazyMemo: typeof cdkCreateLazyMemo;
+            let createEffect: typeof solidCreateEffect;
 
-            beforeEach(() => createLazyMemo = signalsModule.createLazyMemo);
+            beforeEach(() => {
+                createLazyMemo = signalsModule.createLazyMemo;
+                createEffect = solidJsModule.createEffect;
+            });
 
             it('Should create memo lazily.', () => {
                 const fn = vitest.fn(() => 1);
-                const memo = createLazyMemo(fn);
+                const memo = inRoot(() => createLazyMemo(getOwner(), fn));
 
                 expect(fn).not.toHaveBeenCalled();
                 expect(memo()).toBe(1);
                 expect(fn).toHaveBeenCalledTimes(1);
             });
+
+            it('', () => {
+                const [source, setSource] = createSignal('A');
+                let memo: () => string = null!;
+
+                inRoot(() => {
+                    memo = createLazyMemo(getOwner(), () => source());
+                    createEffect(() => logEvent(memo()));
+                });
+
+                assertLog([ EFFECT_RUNS, 'A' ]);
+                setSource('B');
+                assertLog([ EFFECT_RUNS, 'B' ]);
+                setSource('C');
+                assertLog([ EFFECT_RUNS, 'C' ]);
+                setSource('D');
+                assertLog([ EFFECT_RUNS, 'D' ]);
+            })
         });
 
         describe('createPresence()', () => {
@@ -814,7 +836,7 @@ describe('Signals', () => {
             });
 
             it('Should throw error if provided argument is not a function', () => {
-                const errorMessage = 'createPresence(): Invalid argument! It must be a function!';
+                const errorMessage = 'createPresence(): Invalid argument! Expected a function.';
 
                 // Will throw
                 expect(() => createPresence(true as any)).toThrow(errorMessage);
@@ -834,7 +856,7 @@ describe('Signals', () => {
             });
 
             it('Should throw an error is directive argument is not na Element instance.', () => {
-                const errorMessage = 'createPresence()[1]: Invalid argument! Expected an Element instance.';
+                const errorMessage = 'createPresence()[1](): Invalid argument! Expected an Element instance.';
                 const [source] = createSignal(null);
                 const [_, directive] = createPresence(source);
 

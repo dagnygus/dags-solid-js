@@ -1,3 +1,5 @@
+import { getOwner } from "solid-js";
+
 /** @internal */
 export function _assertIsFunction(target: any, errorMessage: string): true {
     if (typeof target === 'function') { return true; }
@@ -100,4 +102,60 @@ export function _assertIsString(target: any, errorMessage: string): true {
 export function _assertIsOptionalString(target: any, errorMessage: string): true {
     if (target == null || typeof target === 'string') { return true }
     throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsOneOf(target: any, expectations: any[], errorMessage: string): true {
+    if (expectations.includes(target)) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsInOwningContext(caller: Function | string): true {
+    if (getOwner()) { return true; }
+    caller = typeof caller === 'function' ? caller.name : caller
+    throw new Error(`${caller}(): An owning context is required!`);
+}
+
+/** @internal */
+export function _assertIsTruthy(target: any, errorMessage: string): true {
+    if (target) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsTrue(target: any, errorMessage: string): true {
+    if (target === true) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsFalsy(target: any, errorMessage: string): true {
+    if (!target) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsFalse(target: any, errorMessage: string): true {
+    if (target === false) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsElement(target: any, errorMessage: string): true {
+    if (target instanceof Element) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsElementWithFocus(target: any, errorMessage: string): true {
+    if (target instanceof Element && 'focus' in target && typeof target.focus === 'function') { return true; }
+    throw new Error(errorMessage);
+}
+
+export function _assertIsOpenShadowRoot(target: any, errorMessage: string): true {
+    if (target instanceof ShadowRoot && target.mode === 'closed') {
+        throw new Error(errorMessage);
+    }
+    return true;
 }

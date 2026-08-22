@@ -1,6 +1,6 @@
-import { createEffect, createRoot, createSignal, getOwner, Show } from "solid-js";
+import { createEffect, createRoot, createSignal, getOwner, JSX, Show } from "solid-js";
 import { _eachPotentialTabbable, _getCurrentAssignedOrigin, focusAutoCapture, focusTrap, focusVia, getFocusedElement, hasFocusedElement, isFocused, monitorFocusOrigin, observeHasFocusedElement, observeIsFocused } from "./focus-management";
-import { render } from "solid-js/web";
+import { MountableElement, render as solidRender } from "solid-js/web";
 
 const enum Origin {
     Program = 'program',
@@ -90,6 +90,12 @@ function inRoot<T>(fn: () => T): T {
         disposeBag.push(dispose);
         return fn();
     });
+}
+
+function render(code: () => JSX.Element, element: MountableElement, init?: JSX.Element, options?: { owner?: unknown; }): () => void {
+    const dispose = solidRender(code, element, init, options);
+    disposeBag.push(dispose);
+    return dispose;
 }
 
 afterEach(() => {
@@ -2932,6 +2938,11 @@ describe('focusTrap()', () => {
         vitest.runAllTicks();
     });
 
+    it('Should throw an error if used outside an owning context.', () => {
+        const errorMessage = 'An owning context is required!'
+        expect(() => focusTrap(document.createElement('div'))).toThrow(errorMessage);
+    })
+
     it('Should trap focus within the DOM branch.', () => {
         function TestComponent() {
             return (
@@ -2963,7 +2974,7 @@ describe('focusTrap()', () => {
         }
 
         
-        inRoot(() => render(() => <TestComponent/>, document.body.appendChild(document.createElement('div')), undefined));
+        render(() => <TestComponent/>, document.body.appendChild(document.createElement('div')), undefined);
         vitest.runAllTicks();
 
         const container = document.getElementById('container') as HTMLElement;
@@ -3253,11 +3264,49 @@ describe('focusAutoCapture()', () => {
         const root = document.body.appendChild(document.createElement('div'));
         const TestComponent = () => <div ref={focusAutoCapture} tabIndex={0} id="item"></div>;
 
-        inRoot(() => disposeBag.push(render(() => <TestComponent/>, root)));
+        render(() => <TestComponent/>, root);
         vitest.runAllTicks();
 
         expect(getFocusedElement()).toBe(document.getElementById('item'));
     });
+
+    it('Should throw an error if it is used outside an owning context.', () => {
+        const errorMessage = 'focusAutoCapture(): An owning context is required!';
+        const div = document.body.appendChild(document.createElement('div'));
+
+        expect(() => focusAutoCapture(div)).toThrow(errorMessage);
+    });
+
+    it('Should throw an error if the provided argument is not an Element instance.', () => {
+        const errorMessage = 'focusAutoCapture(): Invalid argument! Expected an Element instance.';
+
+        inRoot(() => {
+            //Will throw
+            expect(() => focusAutoCapture(0 as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture(1 as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture('' as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture('A' as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture(true as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture(false as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture(undefined as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture(null as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture({} as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture([] as any)).toThrow(errorMessage);
+            expect(() => focusAutoCapture((() => {}) as any)).toThrow(errorMessage);
+
+            //Will not throw
+            expect(() => focusAutoCapture(document.body.appendChild(document.createElement('div'))));
+        });
+    });
+
+    it('Should throw an error if the provided element does not implement a focus() method.', () => {
+        const errorMessage = 'focusAutoCapture(): Provided element does not implement focus() method.';
+        const div = document.body.appendChild(document.createElement('div'));
+
+        div.focus = undefined as any;
+
+        expect(() => inRoot(() => focusAutoCapture(div))).toThrow(errorMessage);
+    })
 
     it('Should restore the last available previous focused element.', () => {
         const div0 = document.body.appendChild(document.createElement('div'));

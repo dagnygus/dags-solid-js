@@ -2,7 +2,7 @@ import { Accessor, createComputed, createEffect, createMemo, createSignal, getOw
 import { _cancelTask, _createTaskObject, _scheduleAsapTask, _Task, } from "../../internals/schedulers";
 import { normalizePassiveListenerOptions } from "../../platform/platform";
 import { isDev } from "solid-js/web";
-import { _assertIsOptionalBoolean } from "../../internals/arg-assertions";
+import { _assertIsElement, _assertIsElementWithFocus, _assertIsInOwningContext, _assertIsOptionalBoolean } from "../../internals/common-assertions";
 import { CdkBatchedMutationRecord, observeBatchedMutations, disableShadowDomScanning } from "../../observers/observers";
 import { createAsapEffect, createLazyMemo } from "../../signals/signals";
 import { addDelegatedEventListener } from "../../event-delegation/event-delegation";
@@ -759,18 +759,17 @@ export function focusTrap(element: Element): void {
     if (__IS_SERVER__) {
         throw new Error('focusTrap(): This function cannot be used in a server environment!');
     }
-    if (isDev) {
-        if (!getOwner()) {
-            throw new Error('focusTrap(): Owning context is required!')
-        }
-        if (!(element instanceof Element)) {
-            throw new Error('focusTrap(): Invalid argument! Expected an Element instance.');
-        }
-    }
+    isDev && _assertIsInOwningContext(
+        focusTrap
+    ) && _assertIsElement(
+        element,
+        'focusTrap(): Invalid argument! Expected an Element instance.'
+    )
+    const disposalOwner = getOwner()!;
     const mutationRecordSource = observeBatchedMutations(element);
     const docMutationRecordSource = observeBatchedMutations(document)
     const hasFocusedElementSource = observeHasFocusedElement(element);
-    const currentFocusedSource = createLazyMemo(() => {
+    const currentFocusedSource = createLazyMemo(disposalOwner, () => {
         if (hasFocusedElementSource()) {
             return getFocusedElement();
         } else {
@@ -778,7 +777,7 @@ export function focusTrap(element: Element): void {
         }
     });
 
-    const hasInertAncestorSource = createLazyMemo(() => {
+    const hasInertAncestorSource = createLazyMemo(disposalOwner, () => {
         const record = docMutationRecordSource();
         if (!record || !record.attributeChange) {
             return false;
@@ -799,7 +798,7 @@ export function focusTrap(element: Element): void {
 
         return false;
     });
-    const isConnectedSource = createLazyMemo(() => {
+    const isConnectedSource = createLazyMemo(disposalOwner, () => {
         docMutationRecordSource();
         return element.isConnected;
     })
@@ -963,17 +962,15 @@ export function focusAutoCapture(element: Element): void {
     if (__IS_SERVER__) {
         throw new Error('focusAutoCapture(): This function cannot be used in a server environment!');
     }
-    if (isDev) {
-        if (!getOwner()) {
-            throw new Error('focusAutoCapture(): Owning context is required!');
-        }
-        if (!(element instanceof Element)) {
-            throw new Error('focusAutoCapture(): Invalid argument! Expected an Element instance.');
-        }
-        if (!_isFocusable(element)) {
-            throw new Error('Provided element does not implement focus() method.');
-        }
-    }
+    isDev && _assertIsInOwningContext(
+        focusAutoCapture
+    ) && _assertIsElement(
+        element,
+        'focusAutoCapture(): Invalid argument! Expected an Element instance.'
+    ) && _assertIsElementWithFocus(
+        element,
+        'focusAutoCapture(): Provided element does not implement focus() method.'
+    );
 
     let task: _Task | null = null;
     let prevFocusedRef: _ElementStackRef | null = null;
@@ -985,7 +982,7 @@ export function focusAutoCapture(element: Element): void {
         }
         (element as FocusableElement).focus();
         if (isDev && !isFocused(element)) {
-            console.error('focusAutoCapture(): Failed to focus the provided element!')
+            console.error('focusAutoCapture(): Failed to focus the provided element!');
         }
     } else {
         task = _createTaskObject(() => {

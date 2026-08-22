@@ -4,38 +4,19 @@
  * Licensed under the MIT License.
  */
 
-import { Accessor, createEffect, createMemo, createReaction, createRenderEffect, createSignal, EffectFunction, getOwner, MemoOptions, onCleanup, onMount, untrack } from "solid-js";
+import { Accessor, createEffect, createMemo, createReaction, createRenderEffect, createSignal, EffectFunction, getOwner, MemoOptions, onCleanup, onMount, Owner, runWithOwner, untrack } from "solid-js";
 import { _cancelTask, _createTaskObject, _scheduleAsapTask, _scheduleAsyncTask, _schedulePostPaintTask, type _Task } from "../internals/schedulers";
 import { isDev } from "solid-js/web";
-import { _assertIsOptionalBoolean, _assertIsOptionalObjectExcludingArray } from "../internals/arg-assertions";
+import { _assertIsElement, _assertIsOptionalBoolean, _assertIsOptionalObjectExcludingArray } from "../internals/common-assertions";
 
 interface _CssAnimationHandler {
     isAnimating(): boolean,
     onDone(cb: () => void): void;
 }
 
-const INVALID_ARG_PRESENCE_ERROR_MESSAGE = 'Invalid argument! It must be a function!'
-const FIRST_ARG_EFFECT_ERROR_MESSAGE = 'Invalid first argument! It must be a function or array of functions!';
-const SECOND_ARG_EFFECT_ERROR_MESSAGE = 'Invalid second argument! It must be a function!';
-
-function _assertIsArrayOfFunctionsOrFunction(arg: any, caller: Function, errorMessage: string): true | never {
-    if (typeof arg === 'function' || (Array.isArray(arg) && arg.length && typeof arg[0] === 'function')) { return true; }
-    throw new Error(`${caller.name}(): ${errorMessage}`);
-}
-
 function _assertIsFunction(arg: any, caller: Function, errorMessage: string): true | never {
     if (typeof arg === 'function') { return true; }
     throw new Error(`${caller.name}(): ${errorMessage}`);
-}
-
-function _coerceToFunction(target: Function | Function[]): Function {
-    if (Array.isArray(target)) {
-        target = target.slice()
-        return () => {
-            for (let i = 0; i < target.length; i++ ) { (target as Function[])[i](); }
-        }
-    }
-    return target;
 }
 
 /**
@@ -279,12 +260,13 @@ if (__IS_SERVER__) {
  *
  * Once initialized, subsequent calls return the value of the same memo.
  *
+ * @param disposalOwner The owner responsible for disposing the lazy memo.
  * @param fn The function used to compute the memo value.
  *
  * @returns A lazy accessor that initializes the memo on its first read and
  * subsequently returns its current value.
  */
-export function createLazyMemo<Next extends Prev, Prev = Next>(fn: EffectFunction<undefined | NoInfer<Prev>, Next>): Accessor<Next>;
+export function createLazyMemo<Next extends Prev, Prev = Next>(disposalOwner: Owner, fn: EffectFunction<undefined | NoInfer<Prev>, Next>): Accessor<Next>;
 /**
  * Creates a lazily initialized memo with an initial value.
  *
@@ -293,6 +275,7 @@ export function createLazyMemo<Next extends Prev, Prev = Next>(fn: EffectFunctio
  *
  * Once initialized, subsequent calls return the value of the same memo.
  *
+ * @param disposalOwner The owner responsible for disposing the lazy memo.
  * @param fn The function used to compute the memo value.
  * @param value The initial value passed to the memo computation.
  * @param options Options used to configure the underlying memo.
@@ -300,10 +283,10 @@ export function createLazyMemo<Next extends Prev, Prev = Next>(fn: EffectFunctio
  * @returns A lazy accessor that initializes the memo on its first read and
  * subsequently returns its current value.
  */
-export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(fn: EffectFunction<Init | Prev, Next>, value: Init, options?: MemoOptions<Next>): Accessor<Next>;
-export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(fn: EffectFunction<Init | Prev, Next>, value?: Init, options?: MemoOptions<Next>): Accessor<Next> {
-    let memo: Accessor<Next> | null = null;
-    return () => (memo ??= createMemo(fn as any, value, options), memo())
+export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(disposalOwner: Owner, fn: EffectFunction<Init | Prev, Next>, value: Init, options?: MemoOptions<Next>): Accessor<Next>;
+export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(disposalOwner: Owner, fn: EffectFunction<Init | Prev, Next>, value?: Init, options?: MemoOptions<Next>): Accessor<Next> {
+    let memo: Accessor<Next>;
+    return () => (memo ??= runWithOwner(disposalOwner, () => createMemo(fn as any, value, options))!, memo())
 }
 
 function _createCssAnimationHandler(el: Element): _CssAnimationHandler {
@@ -381,7 +364,7 @@ export function createPresence<T>(source: Accessor<T>): [Accessor<T>, (element: 
     if (__IS_SERVER__) {
         return [source, () => {}];
     }
-    isDev && _assertIsFunction(source, createPresence, INVALID_ARG_PRESENCE_ERROR_MESSAGE);
+    isDev && _assertIsFunction(source, createPresence, 'Invalid argument! Expected a function.');
 
     const [state, setState] = createSignal(source());
 
@@ -396,9 +379,10 @@ export function createPresence<T>(source: Accessor<T>): [Accessor<T>, (element: 
     })
 
     const refFn = (el: Element) => {
-        if (isDev && !(el instanceof Element)) {
-            throw new Error('createPresence()[1]: Invalid argument! Expected an Element instance.');
-        }
+        isDev && _assertIsElement(
+            el,
+            'createPresence()[1](): Invalid argument! Expected an Element instance.'
+        );
         handler = _createCssAnimationHandler(el);
         getOwner() && onCleanup(() => handler = null);
     }

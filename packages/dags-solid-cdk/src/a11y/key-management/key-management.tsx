@@ -1,11 +1,12 @@
 import { Accessor, batch, createComputed, createContext, createMemo, createRoot, createSignal, getOwner, onCleanup, Setter, untrack, useContext } from "solid-js";
 import { _cancelTask, _createTaskObject, _scheduleAsapTask } from "../../internals/schedulers";
 import { isDev } from "solid-js/web";
-import { _assertExpectedNumber, _assertIsAllowedModifierKeysConfig, _assertIsBoolean, _assertIsFunction, _assertIsNumber, _assertIsObjectExcludingArray, _assertIsOptionalBoolean, _assertIsOptionalNumber, _assertIsOptionalString, _assertIsOptionalTypeaheadConfig, _assertIsOrientationDirection, _assertIsString } from "../../internals/arg-assertions";
+import { _assertExpectedNumber, _assertIsAllowedModifierKeysConfig, _assertIsBoolean, _assertIsElement, _assertIsElementWithFocus, _assertIsFalse, _assertIsFalsy, _assertIsFunction, _assertIsInOwningContext, _assertIsNumber, _assertIsObjectExcludingArray, _assertIsOptionalBoolean, _assertIsOptionalNumber, _assertIsOptionalString, _assertIsOptionalTypeaheadConfig, _assertIsOrientationDirection, _assertIsString, _assertIsTrue, _assertIsTruthy } from "../../internals/common-assertions";
 import { observerMutations } from "../../observers/observers";
 import { _createNotifier } from "../../internals/utils";
 import { addDelegatedEventListener } from "../../event-delegation/event-delegation";
 import { FocusableElement, focusVia, isFocused } from "../focus-management/focus-management";
+import { createLazyMemo } from "../../signals/signals";
 
 /** 
  * This interface is for items that can be passed to a KeyManager.
@@ -204,6 +205,13 @@ export interface KeyManager {
      * @reactive
      */
     readonly typing: boolean;
+
+    /**
+     * Indicates whether the key manager has been disposed.
+     *
+     * Once disposed, the manager can no longer be used to bind keyboard handlers.
+     */
+    readonly disposed: boolean;
 
     /**
      * The number of items to skip when using `page up` and `page down` keys;
@@ -910,7 +918,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
 
     let builded = false;
 
-    function throwIfBuilder(methodName: string): true {
+    function throwIfBuilded(methodName: string): true {
         if (builded) {
             throw new Error(
                 'ListKeyManager.' + methodName + '(): This builder has already been used. ' +
@@ -923,7 +931,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
 
     return {
         withAccessibilityNameAccessor(getAccessibilityNameFn) {
-            isDev && throwIfBuilder(
+            isDev && throwIfBuilded(
                 'withAccessibilityNameAccessor'
             ) && _assertIsFunction(
                 getAccessibilityNameFn,
@@ -933,7 +941,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             return this;
         },
         withAllowedModifierKeys(allowedKeysConfig) {
-            isDev && throwIfBuilder(
+            isDev && throwIfBuilded(
                 'withAllowedModifierKeys'
             ) && _assertIsAllowedModifierKeysConfig(
                 allowedKeysConfig,
@@ -950,7 +958,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
         },
         withKeyboardHandler(stepOrHandler, maybeHandler?: any) {
             if (isDev) {
-                throwIfBuilder('withKeyboardHandler');
+                throwIfBuilded('withKeyboardHandler');
                 _assertExpectedNumber(
                     arguments.length,
                     (value) => value > 0,
@@ -978,7 +986,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             return this;
         },
         withHomeAndEnd(enabled) {
-            isDev && throwIfBuilder(
+            isDev && throwIfBuilded(
                 'withHomeAndEnd'
             ) && _assertIsOptionalBoolean(
                 enabled,
@@ -988,7 +996,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             return this;
         },
         withHorizontalOrientation(direction, jumpStep) {
-            isDev && throwIfBuilder(
+            isDev && throwIfBuilded(
                 'withHorizontalOrientation'
             ) && _assertExpectedNumber(
                 arguments.length,
@@ -1011,7 +1019,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             return this;
         },
         withPageUpDown(enabled, delta) {
-            isDev && throwIfBuilder(
+            isDev && throwIfBuilded(
                 'withPageUpDown'
             ) && _assertIsOptionalBoolean(
                 enabled,
@@ -1025,7 +1033,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             return this;
         },
         withSkipPredicate(predicate) {
-            isDev && throwIfBuilder(
+            isDev && throwIfBuilded(
                 'withSkipPredicate'
             ) && _assertIsFunction(
                 predicate,
@@ -1035,7 +1043,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             return this;
         },
         withTypeAhead(typeaheadConfig) {
-            isDev && throwIfBuilder(
+            isDev && throwIfBuilded(
                 'withTypeAhead'
             ) && _assertIsOptionalTypeaheadConfig(
                 typeaheadConfig,
@@ -1061,7 +1069,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             return this;
         },
         withVerticalOrientation(jumpStep) {
-            isDev && throwIfBuilder(
+            isDev && throwIfBuilded(
                 'withVerticalOrientation'
             ) && _assertIsOptionalNumber(
                 jumpStep,
@@ -1072,7 +1080,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             return this;
         },
         withWrap(shouldWrap) {
-            isDev && throwIfBuilder(
+            isDev && throwIfBuilded(
                 'withWrap'
             ) && _assertIsOptionalBoolean(
                 shouldWrap,
@@ -1082,7 +1090,7 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             return this;
         },
         build() {
-            isDev && throwIfBuilder('build')
+            isDev && throwIfBuilded('build') && _assertIsInOwningContext('KeyManagerBuilder.build');
             builded = true;
             return new _KeyManagerImpl(config);
         },
@@ -1161,9 +1169,6 @@ export class _KeyManagerImpl implements KeyManager {
         getAccessibilityNameFn,
         keyboardHandler
     }: _KeyManagerConfig) {
-        if (isDev && !getOwner()) {
-            throw new Error('KeyManager must be created in owning context!')
-        }
         const [activeItem, setActiveItem] = createSignal<KeyManagerItem | null>(null);
         const [activeIndex, setActiveIndex] = createSignal<number>(-1);
         const [count, setCount] = createSignal(0);
@@ -1269,26 +1274,26 @@ export class _KeyManagerImpl implements KeyManager {
         }
     }
 
+    get disposed(): boolean { return this._disposed; }
+
     bind = (container: Element) => {
         if (__IS_SERVER__) {
             throw new Error('KeyManager.bind(): This method cannot be used in a server environment!');
         }
 
-        if (isDev) {
-            if (!(container instanceof Element)) {
-                throw new Error('KeyManager.bind(): Invalid argument! String or instance of Element class are allowed.');
-            }
-            if (this._containerEl) {
-                throw new Error('KeyManager.bind(): Manager is already bound!');
-            }
-        }
-
-        if (isDev) {
-            if (_containerBinding.has(container)) {
-                throw new Error('KeyManager.bind(): Provided element is already bound to some key manager!');
-            }
-            _containerBinding.set(container, this);
-        }
+        isDev && _assertIsFalse(
+            this._disposed,
+            'KeyManger.bind(): Cannot bind after the manager has been disposed!'
+        ) && _assertIsElement(
+            container,
+            'KeyManager.bind(): Invalid argument! String or instance of Element class are allowed.'
+        ) && _assertIsFalsy(
+            this._containerEl,
+            'KeyManager.bind(): Manager is already bound!'
+        ) && _assertIsFalse(
+            _containerBinding.has(container),
+            'KeyManager.bind(): Provided element is already bound to some key manager!'
+        ) && _containerBinding.set(container, this);
 
         const keyboardHandler = this._keyboardHandler
 
@@ -1312,19 +1317,15 @@ export class _KeyManagerImpl implements KeyManager {
                 _isInHandlerContext = false;
                 _currentKey = undefined;
             }
-            if (isDev) {
-                _assertIsBoolean(
-                    result,
-                    'KeyManagerBuilder.withKeyboardHandler(): Invalid keyboard handler! The return type must be a boolean.'
-                )
-                if (e.defaultPrevented) {
-                    throw new Error(
-                        'KeyManagerBuilder.withKeyboardHandler(): '+
-                        'Keyboard handler must not call event.preventDefault(). ' +
-                        'Return true instead to indicate that the event has been handled.'
-                    );
-                }
-            }
+            isDev && _assertIsBoolean(
+                result,
+                'KeyManagerBuilder.withKeyboardHandler(): Invalid keyboard handler! The return type must be a boolean.'
+            ) && _assertIsFalse(
+                e.defaultPrevented,
+                'KeyManagerBuilder.withKeyboardHandler(): '+
+                'Keyboard handler must not call event.preventDefault(). ' +
+                'Return true instead to indicate that the event has been handled.'
+            );
             if (result) {
                 e.preventDefault();
                 this._typeahead?.reset();
@@ -1335,16 +1336,13 @@ export class _KeyManagerImpl implements KeyManager {
     }
 
     setActive(itemOrIndex: KeyManagerItem | number): boolean {
-        if (isDev) {
-            if (this._disposed) {
-                throw new Error('KeyManager.setActive(): This method can not be used when instance is disposed!');
-            }
-            if (typeof itemOrIndex !== 'number' && itemOrIndex == null) {
-                throw new Error('KeyManager.setActive(): Invalid argument!');
-            }
-        }
+        if (this._disposed) { return false; }
+        isDev && typeof itemOrIndex !== 'number' && _assertIsObjectExcludingArray(
+            itemOrIndex,
+            'KeyManager.setActive(): Invalid argument!'
+        );
 
-        const index = typeof itemOrIndex === 'number' ? Math.floor(itemOrIndex) : this._indexOf(itemOrIndex);
+        const index = typeof itemOrIndex === 'number' ? Math.trunc(itemOrIndex) : this._indexOf(itemOrIndex);
 
         if (
             index > -1 &&
@@ -1371,7 +1369,7 @@ export class _KeyManagerImpl implements KeyManager {
     }
 
     getItemAt(index: number): KeyManagerItem | null {
-        if (index < 0 || index >= this._items.length) { return null }
+        if (this._disposed || index < 0 || index >= this._items.length) { return null; }
         return this._items[Math.floor(index)];
     }
 
@@ -1471,7 +1469,7 @@ export class _KeyManagerImpl implements KeyManager {
     onActiveItemDisabled(listener: (manager: KeyManager, item: KeyManagerItem, index: number) => void): () => void {
         isDev && _assertIsFunction(
             listener,
-            'KeyManager.onActiveItemDisabled(): Provided argument is not a function!'
+            'KeyManager.onActiveItemDisabled(): Invalid argument! Expected a function.'
         );
         return this._activeItemDisabledNotifier.add(listener);
     }
@@ -1479,7 +1477,7 @@ export class _KeyManagerImpl implements KeyManager {
     onActiveItemRemoved(listener: (manager: KeyManager) => void): () => void {
         isDev && _assertIsFunction(
             listener,
-            'KeyManager.onActiveItemRemoved(): Provided argument is not a function!'
+            'KeyManager.onActiveItemRemoved(): Invalid argument! Expected a function.'
         );
         return this._activeItemRemovedNotifier.add(listener);
     }
@@ -1487,28 +1485,28 @@ export class _KeyManagerImpl implements KeyManager {
     onTabOut(listener: (manager: KeyManager, event: KeyboardEvent) => void): () => void {
         isDev && _assertIsFunction(
             listener,
-            'KeyManager.onTabOut(): Provided argument is not a function!'
+            'KeyManager.onTabOut(): Invalid argument! Expected a function.'
         );
         return this._tabOutNotifier.add(listener);
     }
     
     addItem(item: KeyManagerItem): void {
-        if (isDev) {
-            if (!this._containerEl) {
-                throw new Error('KeyManager.addItem(): This method can not be used if manager is not bound to container element.');
-            }
-            if ((item as any)[_KEY_MANAGER] && (item as any)[_KEY_MANAGER] !== this && !((item as any)[_KEY_MANAGER] as _KeyManagerImpl)._disposed) {
-                throw new Error('KeyManager.addItem(): The item already belongs to some key manager!');
-            }
-        }
+        if (this._disposed) { return; }
+        isDev && _assertIsTruthy(
+            this._containerEl,
+            'KeyManager.addItem(): This method can not be used if manager is not bound to container element.'
+        ) && _assertIsFalsy(
+            (item as any)[_KEY_MANAGER] && (item as any)[_KEY_MANAGER] !== this && !((item as any)[_KEY_MANAGER] as _KeyManagerImpl)._disposed,
+            'KeyManager.addItem(): The item already belongs to some key manager!'
+        );
 
-        if (this._disposed || (item as any)[_KEY_MANAGER] === this) { return; }
+        if ((item as any)[_KEY_MANAGER] === this) { return; }
         (item as any)[_KEY_MANAGER] = this;
 
         const items = this._items;
 
         if (items.length) {
-            if (items[items.length - 1].compare(item) < 0) {
+            if (items[items.length - 1].compare(item) <= 0) {
                 items.push(item);
                 batch(() => {
                     this._setCount(items.length);
@@ -1546,11 +1544,11 @@ export class _KeyManagerImpl implements KeyManager {
     }
 
     removeItem(item: KeyManagerItem): void {
+        if (this._disposed) { return; }
+
         if (isDev && !this._containerEl) {
             throw new Error('KeyManager.removeItem(): This method con not be used if manager is not bound to container element.');
         }
-
-        if (this._disposed) { return; }
 
         const index = this._indexOf(item);
 
@@ -1580,14 +1578,13 @@ export class _KeyManagerImpl implements KeyManager {
         if (__IS_SERVER__) {
             throw new Error('<KeyManager.Provider>: This method cannot be used in a server environment!');
         }
-        if (isDev) {
-            if (!this._containerEl) {
-                throw new Error('<keyManager.Provide>: Bind the manager to a container element before using this component!');
-            }
-            if (this._disposed) {
-                throw new Error('<keyManager.Provide>: The manager is disposed!');
-            }
-        }
+        isDev && _assertIsFalse(
+            this._disposed,
+            `<keyManager.Provide>: Cannot use a disposed key manager!`
+        ) && _assertIsTruthy(
+            this._containerEl,
+            '<keyManager.Provide>: The key manager must be bound to a container element before using this component!'
+        )
         return <_managerContext.Provider value={this}>{props.children}</_managerContext.Provider>
     }
 
@@ -1949,9 +1946,10 @@ function _registerItem(
 export class DOMElementKeyManagerItem<T extends Element = Element> implements KeyManagerItem {
 
     private _getAccName = useAccessibilityNameAccessor() || _defaultGetAccName;
-    private _disabled: Accessor<boolean>;
-    private _attached = false;
+    private _disabled!: Accessor<boolean>;
+    private _dispose: () => void;
     protected _disposed = false;
+    protected _manager: KeyManager | null = null;
 
     /**
      * Creates a new DOM-backed key manager item.
@@ -1969,43 +1967,42 @@ export class DOMElementKeyManagerItem<T extends Element = Element> implements Ke
             );
         }
         this._getAccName = useAccessibilityNameAccessor() || _defaultGetAccName
-        if (isDev) {
-            if (!(_element instanceof Element)) {
-                throw new Error(`${(this as any).constructor.name}.constructor(): The provided element is not a DOM element!`);
-            }
-            _assertIsOptionalString(
-                _activeElementCssClassName,
-                `${(this as any).constructor.name}.constructor(): The second argument must be a string!`
-            )
-            if (_itemBinding.has(_element)) {
-                throw new Error(`${(this as any).constructor.name}.constructor(): The provided element already has a key manager item!`);
-            }
-            if (typeof this._getAccName(_element) !== 'string') {
-                throw new Error(
-                    'KeyManagerBuilder.withAccessabilityNameAccessor() or <ProvideAccessibilityNameAccessor>: The return type of provided function must be a string!'
-                );
-            }
-            _itemBinding.set(_element, this);
-        }
+        isDev && _assertIsElement(
+            _element,
+            `${(this as any).constructor.name}.constructor(): The provided element is not a DOM element!`
+        ) && _assertIsOptionalString(
+            _activeElementCssClassName,
+            `${(this as any).constructor.name}.constructor(): The second argument must be a string!`
+        ) && _assertIsFalse(
+            _itemBinding.has(_element),
+            `${(this as any).constructor.name}.constructor(): The provided element already has a key manager item!`
+        ) && _assertIsString(
+            this._getAccName(_element),
+            'KeyManagerBuilder.withAccessabilityNameAccessor() or <ProvideAccessibilityNameAccessor>: The return type of provided function must be a string!'
+        ) && _itemBinding.set(_element, this);
 
-        this._disabled = createMemo(() => {
-            observerMutations(_element)();
-            if (
-                _element instanceof HTMLInputElement ||
-                _element instanceof HTMLButtonElement ||
-                _element instanceof HTMLSelectElement ||
-                _element instanceof HTMLTextAreaElement
-            ) {
-                return _element.disabled && _element.matches(':disabled');
-            }
-            return this._element.ariaDisabled === 'true';
+        this._dispose = createRoot((dispose) => {
+            const mutationRecordSource = createRoot((dispose) => (this._dispose = dispose, observerMutations(_element)));
+            this._disabled = createLazyMemo(getOwner()!, () => {
+                mutationRecordSource()
+                if (
+                    _element instanceof HTMLInputElement ||
+                    _element instanceof HTMLButtonElement ||
+                    _element instanceof HTMLSelectElement ||
+                    _element instanceof HTMLTextAreaElement
+                ) {
+                    return _element.disabled && _element.matches(':disabled');
+                }
+                return this._element.ariaDisabled === 'true';
+            });
+            return dispose;
         });
     }
 
     /**
      * Gets the underlying DOM element represented by this item.
      * 
-     * @throws Error if item is disposed.
+     * @throws `Error` if item is disposed.
      */
     get element(): T { 
         if (isDev && this._disposed) {
@@ -2017,7 +2014,7 @@ export class DOMElementKeyManagerItem<T extends Element = Element> implements Ke
     /**
      * The unique ID associated with this item.
      * 
-     * @throws Error if item is disposed.
+     * @throws `Error` if item is disposed.
      */
     get id(): string {
         if (isDev && this._disposed) {
@@ -2032,7 +2029,7 @@ export class DOMElementKeyManagerItem<T extends Element = Element> implements Ke
      * Reads of this property must be reactive so that the KeyManager can
      * automatically respond to changes in the disabled state.
      * 
-     * @throws Error if item is disposed.
+     * @throws `Error` if item is disposed.
      */
     get disabled(): boolean {
         if (isDev && this._disposed) {
@@ -2044,7 +2041,7 @@ export class DOMElementKeyManagerItem<T extends Element = Element> implements Ke
     /**
      * Label for this item.
      * 
-     * @throws Error if item is disposed.
+     * @throws `Error` if item is disposed.
      * */
     get label(): string {
         if (isDev && this._disposed) {
@@ -2063,20 +2060,25 @@ export class DOMElementKeyManagerItem<T extends Element = Element> implements Ke
      *
      * Used by the key manager to maintain a stable navigation order.
      *
+     * @throws `Error` if item is disposed.
+     * 
      * @param target The item to compare against.
      * @returns A negative number if this item precedes the target,
      *          a positive number if it follows the target,
      *          or 0 if both items are considered equal in order.
      */
     compare(target: KeyManagerItem): number {
+        isDev && _assertIsFalse(
+            this._disposed,
+            `${(this as any).constructor.name}.compare(): A disposed item cannot be compared!`
+        );
         if (target === this) { return 0; }
         if (target instanceof DOMElementKeyManagerItem) {
             const relation = this._element.compareDocumentPosition(target.element);
-            if (isDev) {
-                if (relation & Node.DOCUMENT_POSITION_DISCONNECTED) {
-                    throw new Error(`${(this as any).constructor.name}.compare(): Failed to compare items. Make sure both items belong to the same DOM tree.`);
-                }
-            }
+            isDev && _assertIsFalsy(
+                relation & Node.DOCUMENT_POSITION_DISCONNECTED,
+                `${(this as any).constructor.name}.compare(): Failed to compare the items! Make sure both items belong to the same DOM tree.`
+            );
             if (relation & Node.DOCUMENT_POSITION_FOLLOWING) {
                 return -1
             }
@@ -2114,27 +2116,29 @@ export class DOMElementKeyManagerItem<T extends Element = Element> implements Ke
      */
     onAttached(manager: KeyManager): void {
         if (isDev) {
-            if (!(
-                manager != null &&
-                typeof manager === 'object' &&
-                'removeItem' in manager &&
-                typeof manager.removeItem === 'function'
-            )) {
-                throw new Error(`${(this as any).constructor.name}.onAttached(): Invalid argument! Expected a key manager with a removeItem() method!`);
-            }
-            if (this._disposed) {
-                manager.removeItem(this);
-                throw new Error(`${(this as any).constructor.name}.onAttached(): A disposed item cannot be added to a key manager!`);
+            try {
+                _assertIsFalse(
+                    this._disposed,
+                    `${(this as any).constructor.name}.onAttached(): A disposed item cannot be added to a key manager!`
+                );
+                _assertIsTrue(
+                    manager != null && typeof manager === 'object' && 'removeItem' in manager && typeof manager.removeItem === 'function',
+                    `${(this as any).constructor.name}.onAttached(): Invalid argument! Expected a key manager with a removeItem() method!`
+                );
+            } finally {
+                if (this.disposed) {
+                    manager.removeItem(this);
+                }
             }
         }
-        this._attached = true
+        this._manager = manager;
     }
 
     /**
      * Invoked after this item has been detached (removed) from a key manager.
      */
     onDetached(): void {
-        this._attached = false
+        this._manager = null;
     }
 
     /**
@@ -2145,13 +2149,15 @@ export class DOMElementKeyManagerItem<T extends Element = Element> implements Ke
      * must no longer be used.
      */
     dispose(): void {
-        if (isDev) {
-            if (this._attached) {
-                throw new Error(`${(this as any).constructor.name}.dispose(): attached item cannot be disposed!`)
-            }
-            _itemBinding.delete(this._element);
-        }
-        (this as any)._element = null;
+        if (this._disposed) { return; }
+        isDev && _assertIsFalsy(
+            this._manager && !this._manager.disposed,
+            `${(this as any).constructor.name}.dispose(): attached item cannot be disposed!`
+        ) && _itemBinding.delete(this._element);
+        this._element = null!;
+        this._manager = null;
+        this._dispose();
+        this._dispose = null!;
         this._disposed = true;
     }
 }
@@ -2169,7 +2175,6 @@ export class DOMElementKeyManagerItem<T extends Element = Element> implements Ke
 export class FocusableDOMElementKeyManagerItem<T extends FocusableElement = FocusableElement> extends DOMElementKeyManagerItem<T> implements KeyManagerItem {
 
     private _isFocused = false;
-    private _manager: KeyManager | null = null;
     private _handleFocus: () => void = () => {
         this._isFocused = true;
         this._manager?.setActive(this);
@@ -2178,12 +2183,17 @@ export class FocusableDOMElementKeyManagerItem<T extends FocusableElement = Focu
 
     constructor(element: T, activeElementCssClassName?: string) {
         super(element, activeElementCssClassName);
-        if (isDev && !('focus' in element && typeof element.focus === 'function')) {
-            _itemBinding.delete(element);
-            (this as any)._element = null;
-            throw new Error(
-                'FocusableDOMElementKeyManagerItem.constructor(): The provided element is not focusable! It does not implement the `focus()` method!'
-            );
+        if (isDev ) {
+            let shouldDelete = true;
+            try {
+                _assertIsElementWithFocus(
+                    element,
+                    'FocusableDOMElementKeyManagerItem.constructor(): The provided element is not focusable! It does not implement the `focus()` method!'
+                )
+                shouldDelete = false;
+            } finally {
+                shouldDelete && _itemBinding.delete(element);
+            }
         }
         element.addEventListener('focus', this._handleFocus);
         element.addEventListener('blur', this._handleBlur);
@@ -2197,14 +2207,14 @@ export class FocusableDOMElementKeyManagerItem<T extends FocusableElement = Focu
         } else {
             this._element.focus();
         }
-        if (isDev && !isFocused(this._element)) {
-            throw new Error(
-                'FocusableDOMElementKeyManagerItem.onActive(): Failed to focus the underlying element. Make sure the element is focusable and connected to the DOM.'
-            );
-        }
+        isDev && _assertIsTrue(
+            isFocused(this._element),
+            'FocusableDOMElementKeyManagerItem.onActive(): Failed to focus the underlying element. Make sure the element is focusable and connected to the DOM.'
+        );
     }
 
     override dispose(): void {
+        if (this._disposed) { return; }
         this._element.removeEventListener('focus', this._handleFocus);
         this._element.removeEventListener('blur', this._handleBlur);
         super.dispose();
@@ -2404,9 +2414,10 @@ class _Typeahead {
         batch(() => {
             newBuffer = this._reducer.call(null, oldBuffer, key);
 
-            if (isDev && typeof newBuffer !== 'string') {
-                throw new Error('ListKeyManager.withTypeAhead(): Invalid reducer return type! Expected a string.');
-            }
+            isDev && _assertIsString(
+                newBuffer,
+                'ListKeyManager.withTypeAhead(): Invalid reducer return type! Expected a string.'
+            );
                 
             if (oldBuffer === newBuffer) { return; }
 

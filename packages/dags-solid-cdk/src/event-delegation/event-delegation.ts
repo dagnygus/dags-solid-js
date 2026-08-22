@@ -1,5 +1,5 @@
 import { delegateEvents, isDev } from "solid-js/web";
-import { _assertIsFunction, _assertIsString } from "../internals/arg-assertions";
+import { _assertIsElement, _assertIsFunction, _assertIsOpenShadowRoot, _assertIsString } from "../internals/common-assertions";
 import { _createNotifier, _Notifier } from "../internals/utils";
 
 const _listeners = new Map<string, Map<Node, _Notifier<[Event]>>>();
@@ -113,23 +113,20 @@ export function addDelegatedEventListener(target: Element, type: string, listene
     if (__IS_SERVER__) {
         throw new Error('addDelegatedEventListener(): This function cannot be used in a server environment!');
     }
-    if (isDev) {
-        if (!(target instanceof Element)) {
-            throw new Error('addDelegatedEventListener(): Invalid first argument! Expected a DOM Element instance.')
-        }
-        const root = target.getRootNode();
-        if (root instanceof ShadowRoot && root.mode == 'closed') {
-            throw new Error('addDelegatedEventListener(): Closed Shadow DOM is not supported! Cannot attach a delegated event listener to a closed Shadow DOM.');
-        }
-        _assertIsString(
-            type,
-            'addDelegatedEventListener(): Invalid second argument! Expected a string.'
-        );
-        _assertIsFunction(
-            listener,
-            'addDelegatedEventListener(): Invalid third argument! Expected a function.'
-        );
-    }
+    isDev && _assertIsElement(
+        target,
+        'addDelegatedEventListener(): Invalid first argument! Expected a DOM Element instance.',
+    ) && _assertIsOpenShadowRoot(
+        target.getRootNode(),
+        'addDelegatedEventListener(): Closed Shadow DOM is not supported! Cannot attach a delegated event listener to a closed Shadow DOM.'
+    ) && _assertIsString(
+        type,
+        'addDelegatedEventListener(): Invalid second argument! Expected a string.'
+    ) && _assertIsFunction(
+        listener,
+        'addDelegatedEventListener(): Invalid third argument! Expected a function.'
+    );
+    
     delegateEvents([type]);
     let notifiers = _listeners.get(type) || null;
     let notifier: _Notifier<[Event]> | null = null;

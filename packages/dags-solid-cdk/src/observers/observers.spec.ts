@@ -695,8 +695,10 @@ describe('Observers', () => {
             });
 
             it('Should finalize internals after observation target is removed from DOM.', async () => {
-                const div = document.body.appendChild(document.createElement('div'));
-                const mutation = inRoot(() => observeMutations(div));
+                const div0 = document.body.appendChild(document.createElement('div'));
+                const div1 = document.body.appendChild(document.createElement('div'));
+                const div2 = document.body.appendChild(document.createElement('div'));
+                const mutation = inRoot(() => observeMutations(div1));
                 let privates = getPrivates();
 
                 expect(privates.emitMutationRecordsTask).not.toBeNull();
@@ -704,7 +706,9 @@ describe('Observers', () => {
                 expect(privates.mutationObserver).not.toBeNull();
                 expect(privates.mutationObserverOptions).not.toBeNull();
 
-                div.remove();
+                div0.remove();
+                div1.remove();
+                div2.remove();
                 await Promise.resolve();
                 await Promise.resolve();
                 privates = getPrivates();
@@ -876,8 +880,10 @@ describe('Observers', () => {
                 });
 
                 it('Should finalize internals concurrently when observation target is removed from DOM.', async () => {
-                    const div = document.body.appendChild(document.createElement('div'));
-                    const mutation = inRoot(() => observeMutations(div));
+                    const div0 = document.body.appendChild(document.createElement('div'));
+                    const div1 = document.body.appendChild(document.createElement('div'));
+                    const div2 = document.body.appendChild(document.createElement('div'));
+                    const mutation = inRoot(() => observeMutations(div1));
                     let privates = getPrivates();
 
                     expect(privates.emitMutationRecordsTask).not.toBeNull();
@@ -887,7 +893,9 @@ describe('Observers', () => {
                     expect(privates.mutationTaskHead).toBeNull();
                     expect(privates.mutationTaskTail).toBeNull();
 
-                    div.remove();
+                    div0.remove();
+                    div1.remove();
+                    div2.remove();
                     await Promise.resolve();
                     flushMicrotasks();
                     privates = getPrivates();

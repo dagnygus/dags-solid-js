@@ -1,6 +1,6 @@
-import { Accessor, Component, createEffect, createRoot, createSignal, getOwner,runWithOwner, Setter } from "solid-js";
+import { Accessor, Component, createEffect, createRoot, createSignal, getOwner,JSX,onCleanup,runWithOwner, Setter, untrack } from "solid-js";
 import { _defaultGetAccName, _KeyManagerImpl, _UNWRAP_SKIP_PREDICATE, currentHandledKey, deferAddItem, DOMElementKeyManagerItem, FocusableDOMElementKeyManagerItem, focusableKeyManagerItem, horizontalLtrOrientationKeyboardHandler, horizontalRtlOrientationKeyboardHandler, isInKeyManagerHandlerContext, KeyManager, KeyManagerBuilder, keyManagerBuilder, keyManagerItem, KeyManagerItem, ProvideAccessabilityNameAccessor, verticalOrientationKeyboardHandler } from "./key-management";
-import { render } from "solid-js/web";
+import { MountableElement, render as solidRender } from "solid-js/web";
 import { isFocused, monitorFocusOrigin } from "../focus-management/focus-management";
 
 vitest.mock(import('./key-management'), (importOgModule) => {
@@ -98,6 +98,12 @@ describe('Key manager', () => {
         }
     }
 
+    function render(code: () => JSX.Element, element: MountableElement, init?: JSX.Element, options?: { owner?: unknown; }): () => void {
+        const dispose = solidRender(code, element, init, options);
+        disposeBag.push(dispose);
+        return dispose;
+    }
+
     afterEach(() => {
         dispose();
         vitest.unstubAllGlobals();
@@ -112,7 +118,7 @@ describe('Key manager', () => {
 
     describe('keyManagerBuilder()', () => {
         
-        test('KeyManagerBuilder.withAccessibilityNameAccessor() Should throw error if argument is not a function.', () => {
+        test('KeyManagerBuilder.withAccessibilityNameAccessor() Should throw an error if the argument is not a function.', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withAccessibilityNameAccessor(): Invalid argument! It must be a function.'
             //Will throw
@@ -131,7 +137,7 @@ describe('Key manager', () => {
             expect(() => builder.withAccessibilityNameAccessor(() => '')).not.toThrow();
         });
 
-        test('KeyManagerBuilder.withAllowedModifierKeys() Should throw error if argument is not an object with a proper shape.', () => {
+        test('KeyManagerBuilder.withAllowedModifierKeys() Should throw an error if the argument is not an object with a proper shape.', () => {
             const builder = keyManagerBuilder();
             const errorMessage =
                 'KeyManagerBuilder.withAllowedModifierKeys(): Invalid argument! ' +
@@ -162,7 +168,7 @@ describe('Key manager', () => {
 
         });
 
-        test('KeyManagerBuilder.withHomeEnd() Should throw error if provided arg is not of type optional boolean (true, false, null, undefined).', () => {
+        test('KeyManagerBuilder.withHomeEnd() Should throw an error if the provided arg is not of type optional boolean (true, false, null, undefined).', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withHomeAndEnd(): Invalid argument! It must be a boolean or nothing.';
             
@@ -182,7 +188,7 @@ describe('Key manager', () => {
             expect(() => builder.withHomeAndEnd(undefined as any)).not.toThrow();
         });
 
-        test('KeyManagerBuilder.withHorizontalOrientation() Should throw error if the first arg is not valid direction string.', () => {
+        test('KeyManagerBuilder.withHorizontalOrientation() Should throw an error if the first arg is not valid direction string.', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withHorizontalOrientation(): Invalid first argument! It must be \'ltr\' or \'rtl\'.'
 
@@ -208,7 +214,7 @@ describe('Key manager', () => {
             expect(() => builder.withHorizontalOrientation('rtl')).not.toThrow();
         });
 
-        test('KeyManagerBuilder.withHorizontalOrientation() Should throw error if the second arg is not optional number.', () => {
+        test('KeyManagerBuilder.withHorizontalOrientation() Should throw an error if the second arg is not optional number.', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withHorizontalOrientation(): Invalid second argument! It must be a number or nothing.'
 
@@ -226,7 +232,7 @@ describe('Key manager', () => {
             expect(() => builder.withHorizontalOrientation('ltr', undefined as any)).not.toThrow();
         });
 
-        test('ListKeyManagerBuilder.withKeyboardHandler() Should throw error if provided first arg is not a function.', () => {
+        test('ListKeyManagerBuilder.withKeyboardHandler() Should throw an error if the first argument is not a function.', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withKeyboardHandler(). Invalid argument! It must be a function.'
 
@@ -250,7 +256,7 @@ describe('Key manager', () => {
             expect(() => builder.withKeyboardHandler((() => {}) as any)).not.toThrow();
         });
 
-        test('ListKeyManagerBuilder.withKeyboardHandler() Should not throw error if provided first arg is number and second is function', () => {
+        test('ListKeyManagerBuilder.withKeyboardHandler() Should not throw an error if the first argument is number and second argument is function.', () => {
             const builder = keyManagerBuilder();
             let errorMessage = 'KeyManagerBuilder.withKeyboardHandler(). Invalid first argument! It must be a number.'
 
@@ -284,7 +290,7 @@ describe('Key manager', () => {
             expect(() => builder.withKeyboardHandler(1, (() => {}) as any)).not.toThrow();
         });
 
-        test('KeyManagerBuilder.withPageUpDown() Should throw error if first arg is not optional boolean.', () => {
+        test('KeyManagerBuilder.withPageUpDown() Should throw an error if the first argument is not an optional boolean.', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withPageUpDown(): Invalid first argument! It must be a boolean or nothing.'
 
@@ -302,7 +308,7 @@ describe('Key manager', () => {
             expect(() => builder.withPageUpDown(null as any)).not.toThrow();
         });
 
-        test('KeyManagerBuilder.withPageUpDown() Should throw error if second arg is not optional number.', () => {
+        test('KeyManagerBuilder.withPageUpDown() Should throw an error if the second argument is not an optional number.', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withPageUpDown(): Invalid second argument! It must be a boolean or nothing.'
 
@@ -319,7 +325,7 @@ describe('Key manager', () => {
             expect(() => builder.withPageUpDown(true, null!));
         });
 
-        test('KeyManagerBuilder.withSkipPredicate() Should throw error if provided arg is not a function.', () => {
+        test('KeyManagerBuilder.withSkipPredicate() Should throw an error if provided argument is not a function.', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withSkipPredicate(): Invalid argument! It must be a function.';
 
@@ -339,7 +345,7 @@ describe('Key manager', () => {
             expect(() => builder.withSkipPredicate((() => {}) as any)).not.toThrow();
         });
 
-        test('KeyManagerBuilder.withTypeAhead() Should should throw error if optional argument is not of shape typeahead config.', () => {
+        test('KeyManagerBuilder.withTypeAhead() should throw an error if the optional argument does not match the shape of the typeahead configuration.', () => {
             const builder = keyManagerBuilder();
 
             const errorMessage = 
@@ -375,7 +381,7 @@ describe('Key manager', () => {
             expect(() => builder.withTypeAhead({ reducer: (() => {}) as any })).not.toThrow(errorMessage);
         });
 
-        test('KeyManagerBuilder.withVerticalOrientation() Should throw error if provided arg is not optional number.', () => {
+        test('KeyManagerBuilder.withVerticalOrientation() Should throw an error if the provided argument is not an optional number.', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withVerticalOrientation(): Invalid argument! It must be a number or nothing.';
 
@@ -396,7 +402,7 @@ describe('Key manager', () => {
             expect(() => builder.withVerticalOrientation(undefined as any)).not.toThrow(errorMessage);
         });
 
-        test('KeyManagerBuilder.withWrap() Should  throw error if provided arg is not optional boolean', () => {
+        test('KeyManagerBuilder.withWrap() Should throw an error if the provided argument is not an optional boolean', () => {
             const builder = keyManagerBuilder();
             const errorMessage = 'KeyManagerBuilder.withWrap(): Invalid argument! It must be a boolean or nothing.';
 
@@ -417,7 +423,7 @@ describe('Key manager', () => {
             expect(() => builder.withWrap(null as any)).not.toThrow();
         });
 
-        test('KeyManagerBuilder.build() Should returns an instance of _KeyManagerImpl class.', () => {
+        test('KeyManagerBuilder.build() Should return an instance of the _KeyManagerImpl class.', () => {
             const builder = keyManagerBuilder();
             let dispose: any = null;
             createRoot((d) => {
@@ -427,7 +433,12 @@ describe('Key manager', () => {
             dispose();
         });
 
-        it('Should any builder method throws error if the builder has already builded an instance.', () => {
+        test('KeyManagerBuilder.build() should throw an error if called outside an owning context.', () => {
+            const errorMessage = 'KeyManagerBuilder.build(): An owning context is required!'
+            expect(() => keyManagerBuilder().build()).toThrow(errorMessage);
+        })
+
+        test('All builder methods should throw an error if an instance has already been built.', () => {
             function getErrorMessage(method: Function): string {
                 return 'ListKeyManager.' + method.name + '(): This builder has already been used. ' +
                 'Create a new builder instance by calling keyManagerBuilder().'
@@ -928,7 +939,7 @@ describe('Key manager', () => {
             expect(() => manager2.bind(container)).toThrow(errorMessage);
         });
 
-        test('_KeyManagerImpl.bind() should throw error if manager is already bound to element.', () => {
+        test('_KeyManagerImpl.bind() should throw an error if manager is already bound to element.', () => {
             const errorMessage = 'KeyManager.bind(): Manager is already bound!';
             const manager = createManager();
 
@@ -936,27 +947,36 @@ describe('Key manager', () => {
             expect(() => manager.bind(document.createElement('div'))).toThrow(errorMessage);
         });
 
-        test('_KeyManagerImpl.bind() should throw error in server environment.', () => {
+        test('_KeyManagerImpl.bind() should throw an error in server environment.', () => {
             const manager = createManager();
             const errorMessage = 'KeyManager.bind(): This method cannot be used in a server environment!'
             using spy = vitest.spyOn((globalThis as any), '__IS_SERVER__', 'get').mockImplementation(() => true);
             expect(() => manager.bind(document.createElement('div'))).toThrow(errorMessage);
         });
 
-        test('_KeyManagerImpl.Provide() should throw error in server environment.', () => {
+        test('_KeyManagerItem.bind() should throw an error if manager is disposed', () => {
+            const errorMessage = 'KeyManger.bind(): Cannot bind after the manager has been disposed!'
+            const manager = createManager();
+
+            dispose();
+
+            expect(() => manager.bind(document.createElement('div'))).toThrow(errorMessage)
+        });
+
+        test('_KeyManagerImpl.Provide() should throw an error in server environment.', () => {
             const manager = createManager();
             const errorMessage = '<KeyManager.Provider>: This method cannot be used in a server environment!'
             using spy = vitest.spyOn((globalThis as any), '__IS_SERVER__', 'get').mockImplementation(() => true);
             expect(() => manager.Provider({ children: undefined })).toThrow(errorMessage);
         });
 
-        test('_KeyManagerImpl.addItem()  should throw error if manager is not bound.', () => {
+        test('_KeyManagerImpl.addItem() should throw an error if manager is not bound.', () => {
             const errorMessage = 'KeyManager.addItem(): This method can not be used if manager is not bound to container element.';
             const manager = createManager();
             expect(() => manager.addItem(new TestItem(0))).toThrow(errorMessage);
         });
 
-        test('_KeyMangerImpl.addItem() should throw error if item already belongs to some manager.', () => {
+        test('_KeyMangerImpl.addItem() should throw an error if item already belongs to some manager.', () => {
             const errorMessage = 'KeyManager.addItem(): The item already belongs to some key manager!'
             const manager1 = createManager();
             const manager2 = createManager();
@@ -1373,7 +1393,7 @@ describe('Key manager', () => {
         });
 
         test('_KeyManagerImpl.onTabOut() should throw error if argument is not a function.', () => {
-            const errorMessage = 'KeyManager.onTabOut(): Provided argument is not a function!';
+            const errorMessage = 'KeyManager.onTabOut(): Invalid argument! Expected a function.';
             let manager = createManager()
             manager.bind(document.createElement('div'));
 
@@ -1484,7 +1504,7 @@ describe('Key manager', () => {
         });
 
         test('_KeyManagerImpl.onActiveItemDisabled() should throw error if argument is not a function.', () => {
-            const errorMessage = 'KeyManager.onActiveItemDisabled(): Provided argument is not a function!'
+            const errorMessage = 'KeyManager.onActiveItemDisabled(): Invalid argument! Expected a function.'
             const manager = createManager()
             manager.bind(document.createElement('div'));
 
@@ -1595,7 +1615,7 @@ describe('Key manager', () => {
         });
 
         test('_KeyManagerImpl.onActiveItemRemoved() should throw error if provided argument is not a function.', () => {
-            const errorMessage = 'KeyManager.onActiveItemRemoved(): Provided argument is not a function!';
+            const errorMessage = 'KeyManager.onActiveItemRemoved(): Invalid argument! Expected a function.';
             const manager = createManager();
 
             //Will throw
@@ -1687,6 +1707,30 @@ describe('Key manager', () => {
             expect(log).toEqual([ 'A', 'B', 0, -1, null, 'C' ]);
         });
 
+        test('_KeyManagerImpl.Provider() should throw an error if the manager is disposed', () => {
+            const errorMessage = '<keyManager.Provide>: Cannot use a disposed key manager!';
+            const manager = createManager();
+
+            dispose();
+
+            expect(() => manager.Provider({ children: undefined })).toThrow(errorMessage);
+        });
+
+        test('_KeyManagerImpl.Provider() should throw an error if the manager is not bound to a container element.', () => {
+            const errorMessage = '<keyManager.Provide>: The key manager must be bound to a container element before using this component!';
+            const manager = createManager();
+
+            expect(() => manager.Provider({ children: undefined })).toThrow(errorMessage);
+        });
+
+        test('_KeyManagerImpl.Provider() should throw an error in a server environment.', () => {
+            const errorMessage = '<KeyManager.Provider>: This method cannot be used in a server environment!';
+            const manager = createManager();
+            using spy = vitest.spyOn((globalThis as any), '__IS_SERVER__', 'get').mockImplementation(() => true);
+
+            expect(() => manager.Provider({ children: undefined })).toThrow(errorMessage);
+        })
+
         test('_KeyManagerImpl._setActiveItemByIndex() should run onInactive and onActive in that order.', () => {
             const log: string[] = [];
             const manager = createManager();
@@ -1730,6 +1774,26 @@ describe('Key manager', () => {
                 '5_inactive',
                 '2_active',
             ]);
+        });
+
+        test('_KeyManagerImpl.setActive() should throw an error if the argument is not number or object.', () => {
+            const errorMessage = 'KeyManager.setActive(): Invalid argument!';
+            const manager = createManager();
+            manager.bind(document.createElement('div'));
+
+            expect(() => manager.setActive(true as any)).toThrow(errorMessage);
+            expect(() => manager.setActive(false as any)).toThrow(errorMessage);
+            expect(() => manager.setActive('' as any)).toThrow(errorMessage);
+            expect(() => manager.setActive('A' as any)).toThrow(errorMessage);
+            expect(() => manager.setActive([] as any)).toThrow(errorMessage);
+            expect(() => manager.setActive((() => {}) as any)).toThrow(errorMessage);
+            expect(() => manager.setActive(null as any)).toThrow(errorMessage);
+            expect(() => manager.setActive(undefined as any)).toThrow(errorMessage);
+            expect(() => manager.setActive(Symbol() as any)).toThrow(errorMessage);
+
+            expect(() => manager.setActive(0)).not.toThrow();
+            expect(() => manager.setActive(1)).not.toThrow();
+            expect(() => manager.setActive({} as any)).not.toThrow();
         });
 
         test('_KeyManagerImpl.setActive() should set item active by index and return true if index is in the range and item on that index is available.', () => {
@@ -5710,21 +5774,51 @@ describe('Key manager', () => {
             expect(() => new DOMElementKeyManagerItem(element)).toThrow(errorMessage);
         });
 
-        it('Should add the provided CSS class na to the list when onActive() is invoked.', () => {
+        it('Should toggle the active class when the item becomes active or inactive.', () => {
             const element = document.createElement('div');
             const item = new DOMElementKeyManagerItem(element, 'active');
+            using addClassSpy = vitest.spyOn(element.classList, 'add');
+            using removeClassSpy = vitest.spyOn(element.classList, 'remove');
 
             expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).not.toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
             item.onActive();
             expect(element.classList.contains('active')).toBe(true);
+            expect(addClassSpy).toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
+            item.onInactive();
+            expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).toHaveBeenCalled();
+            expect(removeClassSpy).toHaveBeenCalled();
+        });
+
+        it('Should not toggle the active class when the disposed item becomes active or inactive.', () => {
+            const element = document.createElement('div');
+            const item = new DOMElementKeyManagerItem(element, 'active');
+            using addClassSpy = vitest.spyOn(element.classList, 'add');
+            using removeClassSpy = vitest.spyOn(element.classList, 'remove');
+
+            item.dispose();
+
+            expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).not.toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
+            item.onActive();
+            expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).not.toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
+            item.onInactive();
+            expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).not.toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
         });
 
         it('Should reactively reflect the buttons\' enabled state.', async () => {
             const log: boolean[] = [];
-            const element = document.createElement('button');
+            const element = document.body.appendChild(document.createElement('button'));
             const item = new DOMElementKeyManagerItem(element);
-            
-            document.body.appendChild(element);
+
             subscribeEffect(() => log.push(item.disabled));
 
             element.disabled = true;
@@ -5742,10 +5836,9 @@ describe('Key manager', () => {
 
         it('Should reactively reflect the inputs\' enabled state.', async () => {
             const log: boolean[] = [];
-            const element = document.createElement('input');
+            const element = document.body.appendChild(document.createElement('input'));
             const item = new DOMElementKeyManagerItem(element);
             
-            document.body.appendChild(element);
             subscribeEffect(() => log.push(item.disabled));
 
             element.disabled = true;
@@ -5763,10 +5856,9 @@ describe('Key manager', () => {
 
         it('Should reactively reflect the value of the aria-disabled attribute.', async () => {
             const log: boolean[] = [];
-            const element = document.createElement('div');
+            const element = document.body.appendChild(document.createElement('div'));
             const item = new DOMElementKeyManagerItem(element);
-            
-            document.body.appendChild(element);
+
             subscribeEffect(() => log.push(item.disabled));
 
             element.setAttribute('aria-disabled', 'true');
@@ -5936,11 +6028,28 @@ describe('Key manager', () => {
         });
 
         test('compare() should throw error if items do not belong to the same DOM tree.', () => {
-            const errorMessage = 'DOMElementKeyManagerItem.compare(): Failed to compare items. Make sure both items belong to the same DOM tree.';
+            const errorMessage = 'DOMElementKeyManagerItem.compare(): Failed to compare the items! Make sure both items belong to the same DOM tree.';
             const item1 = new DOMElementKeyManagerItem(document.createElement('div'));
             const item2 = new DOMElementKeyManagerItem(document.createElement('div'));
             
             expect(() => item1.compare(item2)).toThrow(errorMessage);
+        });
+
+        test('compare() should throw error if the item is disposed', () => {
+            const errorMessage = 'DOMElementKeyManagerItem.compare(): A disposed item cannot be compared!'
+            const item1 = new DOMElementKeyManagerItem(document.body.appendChild(document.createElement('div')));
+            const item2 = new DOMElementKeyManagerItem(document.body.appendChild(document.createElement('div')));
+
+            item1.dispose();
+            expect(() => item1.compare(item2)).toThrow(errorMessage);
+        });
+
+        test('dispose() should be able to call multiple times without any problem', () => {
+            const item = new DOMElementKeyManagerItem(document.createElement('div'));
+            
+            item.dispose();
+            
+            expect(() => item.dispose()).not.toThrow();
         });
 
         it('Should not contain an element reference after disposal.', () => {
@@ -6096,7 +6205,7 @@ describe('Key manager', () => {
                 }}</ProvideAccessabilityNameAccessor>
             }
 
-            disposeBag.push(render(() => <Test/>, document.createElement('div')));
+            render(() => <Test/>, document.createElement('div'));
 
             expect(log).toEqual([ 'A' ]);
         });
@@ -6183,14 +6292,48 @@ describe('Key manager', () => {
             expect(() => new FocusableDOMElementKeyManagerItem(element)).toThrow(errorMessage);
         });
 
-        it('Should throw an error when onActive() is invoke and the element is not focusable.', () => {
-            const errorMessage = 'FocusableDOMElementKeyManagerItem.onActive(): Failed to focus the underlying element. Make sure the element is focusable and connected to the DOM.'
-            const item = new FocusableDOMElementKeyManagerItem(document.createElement('div'));
+        it('Should toggle the active class when the item becomes active or inactive.', () => {
+            const element = document.body.appendChild(document.createElement('div'));
+            const item = new FocusableDOMElementKeyManagerItem(element, 'active');
+            using addClassSpy = vitest.spyOn(element.classList, 'add');
+            using removeClassSpy = vitest.spyOn(element.classList, 'remove');
 
-            document.body.appendChild(item.element);
+            element.tabIndex = 0
 
-            expect(() => item.onActive()).toThrow(errorMessage);
-        })
+            expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).not.toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
+            item.onActive();
+            expect(element.classList.contains('active')).toBe(true);
+            expect(addClassSpy).toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
+            item.onInactive();
+            expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).toHaveBeenCalled();
+            expect(removeClassSpy).toHaveBeenCalled();
+        });
+
+        it('Should not toggle the active class when the disposed item becomes active or inactive.', () => {
+            const element = document.body.appendChild(document.createElement('div'));
+            const item = new FocusableDOMElementKeyManagerItem(element, 'active');
+            using addClassSpy = vitest.spyOn(element.classList, 'add');
+            using removeClassSpy = vitest.spyOn(element.classList, 'remove');
+
+            element.tabIndex = 0
+            item.dispose();
+
+            expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).not.toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
+            item.onActive();
+            expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).not.toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
+            item.onInactive();
+            expect(element.classList.contains('active')).toBe(false);
+            expect(addClassSpy).not.toHaveBeenCalled();
+            expect(removeClassSpy).not.toHaveBeenCalled();
+        });
 
         it('Should add the provided CSS class na to the list when onActive() is invoked.', () => {
             const element = document.createElement('div');
@@ -6475,11 +6618,28 @@ describe('Key manager', () => {
         });
 
         test('compare() should throw error if items do not belong to the same DOM tree.', () => {
-            const errorMessage = 'FocusableDOMElementKeyManagerItem.compare(): Failed to compare items. Make sure both items belong to the same DOM tree.';
+            const errorMessage = 'FocusableDOMElementKeyManagerItem.compare(): Failed to compare the items! Make sure both items belong to the same DOM tree.';
             const item1 = new FocusableDOMElementKeyManagerItem(document.createElement('div'));
             const item2 = new FocusableDOMElementKeyManagerItem(document.createElement('div'));
             
             expect(() => item1.compare(item2)).toThrow(errorMessage);
+        });
+
+        test('compare() should throw error if the item is disposed', () => {
+            const errorMessage = 'FocusableDOMElementKeyManagerItem.compare(): A disposed item cannot be compared!'
+            const item1 = new FocusableDOMElementKeyManagerItem(document.body.appendChild(document.createElement('div')));
+            const item2 = new FocusableDOMElementKeyManagerItem(document.body.appendChild(document.createElement('div')));
+
+            item1.dispose();
+            expect(() => item1.compare(item2)).toThrow(errorMessage);
+        });
+
+        test('dispose() should be able to call multiple times without any problem', () => {
+            const item = new FocusableDOMElementKeyManagerItem(document.createElement('div'));
+            
+            item.dispose();
+            
+            expect(() => item.dispose()).not.toThrow();
         });
 
         it('Should not contain an element reference after disposal.', () => {
@@ -6633,7 +6793,7 @@ describe('Key manager', () => {
                 }}</ProvideAccessabilityNameAccessor>
             }
 
-            disposeBag.push(render(() => <Test/>, document.createElement('div')));
+            render(() => <Test/>, document.createElement('div'));
             expect(log).toEqual([ 'A' ]);
         });
 
@@ -6815,7 +6975,7 @@ describe('Key manager', () => {
             const root = document.createElement('div');
             document.body.appendChild(root);
 
-            disposeBag.push(render(() => <TestComponent/>, root));
+            render(() => <TestComponent/>, root);
             await Promise.resolve();
             
             expect(manager._items.length).toBe(6);
@@ -6921,7 +7081,7 @@ describe('Key manager', () => {
             const root = document.createElement('div');
             document.body.appendChild(root);
 
-            disposeBag.push(render(() => <TestComponent/>, root));
+            render(() => <TestComponent/>, root);
             await Promise.resolve();
             
             expect(manager._items.length).toBe(6);

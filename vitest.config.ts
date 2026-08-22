@@ -2,7 +2,6 @@ import { defineConfig } from "vitest/config";
 import babel from "@rollup/plugin-babel";
 //@ts-expect-error
 import solid from "babel-preset-solid";
-import solidPlugin from "vite-plugin-solid"; 
 
 export default defineConfig({
   plugins: [
@@ -12,11 +11,14 @@ export default defineConfig({
       extensions: [".ts", ".tsx", ".js", ".jsx"],
     }),
   ],
-  // plugins: [
-  //   solidPlugin({ extensions:  [".ts", ".tsx", ".js", ".jsx"] })
-  // ],
   resolve: {
-    conditions: [ "development", "browser" ]
+    extensions: ['.tsx', '.ts', '.jsx', '.js', '.json'],
+    conditions: ['development', 'browser']
+  },
+  ssr: {
+    resolve: {
+      conditions: ['development', 'browser']
+    }
   },
   test: {
     globals: true,
