@@ -3,9 +3,8 @@
  * Copyright (c) 2026 dags-solid-cdk contributors.
  * Licensed under the MIT License.
  */
-
 import { Accessor, createEffect, createMemo, createReaction, createRenderEffect, createSignal, EffectFunction, getOwner, MemoOptions, onCleanup, onMount, Owner, runWithOwner, untrack } from "solid-js";
-import { _cancelTask, _createTaskObject, _scheduleAsapTask, _scheduleAsyncTask, _schedulePostPaintTask, type _Task } from "../internals/schedulers";
+import { _cancelTask, _createTaskObject, _scheduleAnimationFrameTask, _scheduleAsapTask, _scheduleAsyncTask, _schedulePostPaintTask, type _Task } from "../internals/schedulers";
 import { isDev } from "solid-js/web";
 import { _assertIsElement, _assertIsOptionalBoolean, _assertIsOptionalObjectExcludingArray } from "../internals/common-assertions";
 
@@ -85,13 +84,14 @@ export function createAsapEffect(effectFn: () => (() => void) | void,  scheduleI
  * synchronous execution context are automatically coalesced into a single
  * callback invocation.
  *
- * The callback is guaranteed to execute asynchronously before the browser
- * renders the next frame.
+ * The callback is guaranteed to execute asynchronously before the animation
+ * frame scheduler cycle.
  *
  * The initial callback is scheduled during the initial execution of the
  * owning effect. By default, it is scheduled for the current reactive cycle.
  * When `scheduleInitialCall` is `true`, the initial callback invocation is
- * deferred to the next asynchronous scheduler cycle.
+ * deferred to the next asynchronous scheduler cycle, before animation frame
+ * scheduler cycle.
  *
  * If the callback returns a cleanup function, it is invoked before the next
  * scheduled execution or when the owning reactive context is disposed.
@@ -101,7 +101,8 @@ export function createAsapEffect(effectFn: () => (() => void) | void,  scheduleI
  *
  * @param effectFn Callback executed asynchronously whenever the source changes.
  * @param scheduleInitialCall Whether to defer the initial callback invocation
- * to the next asynchronous scheduler cycle. Defaults to `false`.
+ * to the next asynchronous scheduler cycle, before animation frame scheduler
+ * cycle. Defaults to `false`.
  */
 export function createAsyncEffect(effectFn: () => (() => void) | void, scheduleInitialCall?: boolean): void {
     if (__IS_SERVER__) { return; }
@@ -138,6 +139,67 @@ export function createAsyncEffect(effectFn: () => (() => void) | void, scheduleI
 }
 
 /**
+ * Creates an effect that is built on top of SolidJS `createEffect`, but
+ * defers the execution of the provided callback asynchronously using the
+ * library's Async Scheduler.
+ *
+ * Unlike `createEffect`, the callback is never executed synchronously after a
+ * source changes. Multiple source updates occurring within the same
+ * synchronous execution context are automatically coalesced into a single
+ * callback invocation.
+ *
+ * The callback is guaranteed to execute asynchronously after asynchronous
+ * scheduler cycle.
+ *
+ * The initial callback is scheduled during the initial execution of the
+ * owning effect. By default, it is scheduled for the current reactive cycle.
+ * When `scheduleInitialCall` is `true`, the initial callback invocation is
+ * deferred to the next animation frame scheduler cycle, after asynchronous
+ * scheduler cycle.
+ *
+ * If the callback returns a cleanup function, it is invoked before the next
+ * scheduled execution or when the owning reactive context is disposed.
+ *
+ * @param effectFn Callback executed asynchronously whenever the source changes.
+ * @param scheduleInitialCall Whether to defer the initial callback invocation
+ * to the next animation frame scheduler cycle, after asynchronous scheduler
+ * cycle. Defaults to `false`.
+ */
+export function createAnimationFrameEffect(effectFn: () => (() => void) | void, scheduleInitialCall?: boolean): void {
+    if (__IS_SERVER__) { return; }
+    isDev && _assertIsFunction(
+        effectFn,
+        createAnimationFrameEffect,
+        'Invalid first argument! Expected a function.'
+    ) && _assertIsOptionalBoolean(
+        scheduleInitialCall,
+        'createAsyncEffect(): Invalid second argument! Expected a boolean or nothing.'
+    );
+
+    let task: _Task | null = null;
+    
+    createEffect(() => {
+        const track = createReaction(() => _scheduleAnimationFrameTask(task!), isDev ? { name: 'createAnimationFrameEffect' } : undefined);
+        const localEffectFn = () => {
+            const cleanup = effectFn();
+            if (cleanup instanceof Function) {
+                onCleanup(cleanup)
+            }
+        }
+        
+        task = _createTaskObject(() => track(localEffectFn));
+
+        if (scheduleInitialCall) {
+            _scheduleAnimationFrameTask(task);
+        } else {
+            track(localEffectFn);
+        }
+    })
+
+    getOwner() && onCleanup(() => task && _cancelTask(task));
+}
+
+/**
  * Creates an effect that is built on top of SolidJS `createRenderEffect`, but
  * defers the execution of the provided callback to the next microtask.
  *
@@ -154,8 +216,7 @@ export function createAsyncEffect(effectFn: () => (() => void) | void, scheduleI
  * The callback is executed in the same reactive owner in which the effect was
  * created.
  *
- * @param effectFn Callback executed asynchronously in a microtask whenever the
- * source changes.
+ * @param effectFn Callback executed asynchronously whenever the source changes.
  */
 export function createAsapRenderEffect(effectFn: () => (() => void) | void): void {
     if (__IS_SERVER__) {
@@ -203,8 +264,8 @@ export function createAsapRenderEffect(effectFn: () => (() => void) | void): voi
  * execution context are automatically coalesced into a single callback
  * invocation.
  *
- * The callback is guaranteed to execute asynchronously before the browser
- * renders the next frame.
+ * The callback is guaranteed to execute asynchronously before animation frame
+ * scheduler cycle.
  *
  * The callback is executed once immediately after the owning effect is created,
  * and then after every source change. If the callback returns a cleanup
@@ -213,8 +274,7 @@ export function createAsapRenderEffect(effectFn: () => (() => void) | void): voi
  *
  * The callback is executed in the same reactive owner in which the effect was
  * created.
- * @param effectFn Callback executed asynchronously in a microtask whenever the
- * source changes.
+ * @param effectFn Callback executed asynchronously whenever the source changes.
  */
 export function createAsyncRenderEffect(effectFn: () => (() => void) | void): void {
 if (__IS_SERVER__) {
@@ -238,6 +298,64 @@ if (__IS_SERVER__) {
 
     createRenderEffect(() => {
         const track = createReaction(() => _scheduleAsyncTask(task!), isDev ? { name: 'createAsyncRenderEffect' } : undefined);
+        const localEffectFn = () => {
+            cleanup = effectFn();
+            if (cleanup instanceof Function) {
+                onCleanup(cleanup);
+            }
+        }
+        
+        task = _createTaskObject(() => track(localEffectFn));
+        track(localEffectFn);
+    });
+
+    getOwner() && onCleanup(() => task && _cancelTask(task));
+}
+
+/**
+ * Creates an effect that is built on top of SolidJS `createRenderEffect`, but
+ * defers the execution of the provided callback asynchronously using the
+ * library's Async Scheduler.
+ *
+ * Unlike `createRenderEffect`, the callback is never executed synchronously after a
+ * source changes. Multiple source updates occurring within the same synchronous
+ * execution context are automatically coalesced into a single callback
+ * invocation.
+ *
+ * The callback is guaranteed to execute asynchronously after asynchronous scheduler
+ * cycle.
+ *
+ * The callback is executed once immediately after the owning effect is created,
+ * and then after every source change. If the callback returns a cleanup
+ * function, it is invoked before the next scheduled execution or when the
+ * owning reactive context is disposed.
+ *
+ * The callback is executed in the same reactive owner in which the effect was
+ * created.
+ * @param effectFn Callback executed asynchronously whenever the source changes.
+ */
+export function createAnimationFrameRenderEffect(effectFn: () => (() => void) | void): void {
+    if (__IS_SERVER__) {
+        createRenderEffect(() => {
+            const cleanup = effectFn()
+            if (cleanup instanceof Function) {
+                onCleanup(cleanup)
+            }
+        });
+        return;
+    }
+
+    isDev && _assertIsFunction(
+        effectFn,
+        createAnimationFrameRenderEffect,
+        'Invalid argument! Expected a function.'
+    );
+
+    let task: _Task | null = null;
+    let cleanup: any
+
+    createRenderEffect(() => {
+        const track = createReaction(() => _scheduleAnimationFrameTask(task!), isDev ? { name: 'createAnimationFrameRenderEffect' } : undefined);
         const localEffectFn = () => {
             cleanup = effectFn();
             if (cleanup instanceof Function) {

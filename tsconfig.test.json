@@ -2,7 +2,7 @@
     "extends": "./tsconfig.json",
     "compilerOptions": {
         "composite": true,
-        "types": ["vitest/globals"],
+        "types": ["vitest/globals", "./test-globals.d.ts"],
         "isolatedDeclarations": false
     },
     "include": [

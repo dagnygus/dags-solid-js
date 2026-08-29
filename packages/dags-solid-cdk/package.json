@@ -81,6 +81,22 @@
         "require": "./dist/server/event-delegation/event-delegation.cjs"
       },
       "default": "./dist/server/event-delegation/event-delegation.mjs"
+    },
+    "./a11y": {
+      "types": "./dist/types/a11y/a11y.d.ts",
+      "browser": {
+        "import": "./dist/browser/a11y/a11y.mjs",
+        "require": "./dist/browser/a11y/a11y.cjs"
+      },
+      "node": {
+        "import": "./dist/server/a11y/a11y.mjs",
+        "require": "./dist/server/a11y/a11y.cjs"
+      },
+      "deno": {
+        "import": "./dist/server/a11y/a11y.mjs",
+        "require": "./dist/server/a11y/a11y.cjs"
+      },
+      "default": "./dist/server/a11y/a11y.mjs"
     }
   }
 }

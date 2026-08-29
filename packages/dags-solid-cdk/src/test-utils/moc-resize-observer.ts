@@ -1,3 +1,9 @@
+/**
+ * @license
+ * Copyright (c) 2026 dags-solid-cdk contributors.
+ * Licensed under the MIT License.
+ */
+
 type _ResizeObserverCallbackRef = {
   callback: ResizeObserverCallback;
   observer: _MockResizeObserver;

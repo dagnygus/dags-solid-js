@@ -1,9 +1,22 @@
+/**
+ * @license
+ * Copyright (c) 2026 dags-solid-cdk contributors.
+ * Licensed under the MIT License.
+ */
+
 /** @internal */
 export interface _Notifier<TArgs extends unknown[] = []> {
     add(listener: (...args: TArgs) => void): () => void;
     notify(...args: TArgs): void;
     dispose(): void;
     count(): number;
+}
+
+/** @internal */
+export interface _ElementIterator<T extends Element = Element> {
+    target: Element;
+    nextElement(): T | null;
+    reset(): void;
 }
 
 /** @internal */
@@ -69,4 +82,62 @@ export function _createNotifier<TArgs extends unknown[] = []>(): _Notifier<TArgs
     }
 
     return notifier;
+}
+
+/** @internal */
+export function _createElementIterator<T extends Element = Element>(target: Element, filter: (element: Element) => number): _ElementIterator<T> {
+    const iterator = {
+        target: target,
+        _starts: true,
+        _walker: document.createTreeWalker(target, NodeFilter.SHOW_ELEMENT, filter as any),
+        reset(): void {
+            this._starts = true;
+            this._walker.currentNode = this.target;
+        },
+        nextElement(): T | null {
+            if (this._starts) {
+                this._starts = false;
+                if (filter(target) === 1) { 
+                    if (target.shadowRoot) {
+                        this._walker.currentNode = target.shadowRoot;
+                    }
+                    return target as T;
+                }
+            }
+            const element = this._walker.nextNode() as T | null;
+            if (element) {
+                if (element.shadowRoot) {
+                    this._walker.currentNode = element.shadowRoot
+                }
+                return element as T;
+            } else {
+                while (this._walker.currentNode !== this.target) {
+                    const currentNode = this._walker.currentNode;
+
+                    let root: Node;
+
+                    if (
+                        (root = currentNode) instanceof ShadowRoot ||
+                        (root = currentNode.getRootNode()) instanceof ShadowRoot
+                    ) {
+                        this._walker.currentNode = root.host;
+
+                        const element = this._walker.nextNode() as T | null;
+
+                        if (element) {
+                            if (element.shadowRoot) {
+                                this._walker.currentNode = element.shadowRoot;
+                            }
+                            return element;
+                        }
+                    } else {
+                        return null;
+                    }
+                }
+
+                return null;
+            }
+        }
+    }
+    return iterator;
 }

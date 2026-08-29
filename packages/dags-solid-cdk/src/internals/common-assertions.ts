@@ -1,3 +1,8 @@
+/**
+ * @license
+ * Copyright (c) 2026 dags-solid-cdk contributors.
+ * Licensed under the MIT License.
+ */
 import { getOwner } from "solid-js";
 
 /** @internal */
@@ -62,8 +67,44 @@ export function _assertIsNumber(target: any, errorMessage: string): true {
 }
 
 /** @internal */
+export function _assertIsFiniteNumber(target: any, errorMessage: string): true {
+    if (typeof target === 'number' && Number.isFinite(target)) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsNotNaN(target: any, errorMessage: string): true {
+    if (typeof target === 'number' && !Number.isNaN(target)) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsCorrectNumber(target: any, errorMessage: string): true {
+    if (typeof target === 'number' && !Number.isNaN(target) && Number.isFinite(target)) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
 export function _assertIsOptionalNumber(target: any, errorMessage: string): true {
     if (target == null || typeof target === 'number') { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsOptionalFiniteNumber(target: any, errorMessage: string): true {
+    if (target == null || (typeof target === 'number' && Number.isFinite(target))) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsOptionalNotNaN(target: any, errorMessage: string): true {
+    if (target == null || (typeof target === 'number' && !Number.isNaN(target))) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
+export function _assertIsOptionalCorrectNumber(target: any, errorMessage: string): true {
+    if (target == null || (typeof target === 'number' && !Number.isNaN(target) && Number.isFinite(target))) { return true; }
     throw new Error(errorMessage);
 }
 

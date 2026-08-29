@@ -1,5 +1,5 @@
-import { Accessor, Component, createEffect, createRoot, createSignal, getOwner,JSX,onCleanup,runWithOwner, Setter, untrack } from "solid-js";
-import { _defaultGetAccName, _KeyManagerImpl, _UNWRAP_SKIP_PREDICATE, currentHandledKey, deferAddItem, DOMElementKeyManagerItem, FocusableDOMElementKeyManagerItem, focusableKeyManagerItem, horizontalLtrOrientationKeyboardHandler, horizontalRtlOrientationKeyboardHandler, isInKeyManagerHandlerContext, KeyManager, KeyManagerBuilder, keyManagerBuilder, keyManagerItem, KeyManagerItem, ProvideAccessabilityNameAccessor, verticalOrientationKeyboardHandler } from "./key-management";
+import { Accessor, Component, createEffect, createRoot, createSignal, getOwner,JSX, runWithOwner, Setter } from "solid-js";
+import { _defaultGetAccName, _KeyManagerImpl, _UNWRAP_SKIP_PREDICATE, currentHandledKey, deferAddItem, DOMElementKeyManagerItem, FocusableDOMElementKeyManagerItem, focusableKeyManagerItem, horizontalLtrOrientationKeyboardHandler, horizontalRtlOrientationKeyboardHandler, isInKeyManagerHandlerContext, KeyManager, KeyManagerBuilder, keyManagerBuilder, keyManagerItem, KeyManagerItem, AccessabilityNameAccessorProvider, verticalOrientationKeyboardHandler } from "./key-management";
 import { MountableElement, render as solidRender } from "solid-js/web";
 import { isFocused, monitorFocusOrigin } from "../focus-management/focus-management";
 
@@ -216,7 +216,7 @@ describe('Key manager', () => {
 
         test('KeyManagerBuilder.withHorizontalOrientation() Should throw an error if the second arg is not optional number.', () => {
             const builder = keyManagerBuilder();
-            const errorMessage = 'KeyManagerBuilder.withHorizontalOrientation(): Invalid second argument! It must be a number or nothing.'
+            let errorMessage = 'KeyManagerBuilder.withHorizontalOrientation(): Invalid second argument! It must be a number or nothing.'
 
             //Will throw
             expect(() => builder.withHorizontalOrientation('ltr', '' as any)).toThrow(errorMessage);
@@ -224,6 +224,13 @@ describe('Key manager', () => {
             expect(() => builder.withHorizontalOrientation('ltr', {} as any)).toThrow(errorMessage);
             expect(() => builder.withHorizontalOrientation('ltr', (() => {}) as any)).toThrow(errorMessage);
             expect(() => builder.withHorizontalOrientation('ltr', [] as any)).toThrow(errorMessage);
+
+            errorMessage = 'KeyManagerBuilder.withHorizontalOrientation(): Invalid second argument! NaN is not supported.';
+            expect(() => builder.withHorizontalOrientation('ltr', NaN)).toThrow(errorMessage);
+
+            errorMessage = 'KeyManagerBuilder.withHorizontalOrientation(): Invalid second argument! Infinite numbers are not supported.';
+            expect(() => builder.withHorizontalOrientation('ltr', Number.POSITIVE_INFINITY)).toThrow(errorMessage);
+            expect(() => builder.withHorizontalOrientation('ltr', Number.NEGATIVE_INFINITY)).toThrow(errorMessage);
 
             //Will not throw
             expect(() => builder.withHorizontalOrientation('ltr', 0)).not.toThrow();
@@ -258,7 +265,7 @@ describe('Key manager', () => {
 
         test('ListKeyManagerBuilder.withKeyboardHandler() Should not throw an error if the first argument is number and second argument is function.', () => {
             const builder = keyManagerBuilder();
-            let errorMessage = 'KeyManagerBuilder.withKeyboardHandler(). Invalid first argument! It must be a number.'
+            let errorMessage = 'KeyManagerBuilder.withKeyboardHandler(). Invalid first argument! It must be a number.';
 
             //Will throw
             expect(() => builder.withKeyboardHandler('' as any, undefined as any)).toThrow(errorMessage);
@@ -272,7 +279,7 @@ describe('Key manager', () => {
             expect(() => builder.withKeyboardHandler(0 as any, undefined as any)).not.toThrow(errorMessage);
             expect(() => builder.withKeyboardHandler(1 as any, undefined as any)).not.toThrow(errorMessage);
 
-            errorMessage = 'KeyManagerBuilder.withKeyboardHandler(). Invalid second argument! It must be a function.'
+            errorMessage = 'KeyManagerBuilder.withKeyboardHandler(). Invalid second argument! It must be a function.';
 
             expect(() => builder.withKeyboardHandler(0, 0 as any)).toThrow(errorMessage);
             expect(() => builder.withKeyboardHandler(0, 1 as any)).toThrow(errorMessage);
@@ -284,6 +291,13 @@ describe('Key manager', () => {
             expect(() => builder.withKeyboardHandler(0, null as any)).toThrow(errorMessage);
             expect(() => builder.withKeyboardHandler(0, {} as any)).toThrow(errorMessage);
             expect(() => builder.withKeyboardHandler(0, [] as any)).toThrow(errorMessage);
+
+            errorMessage = 'KeyManagerBuilder.withKeyboardHandler(). Invalid first argument! NaN is not supported.';
+            expect(() => builder.withKeyboardHandler(NaN, (() => {}) as any)).toThrow(errorMessage);
+            
+            errorMessage = 'KeyManagerBuilder.withKeyboardHandler(). Invalid first argument! Infinite numbers are not supported.';
+            expect(() => builder.withKeyboardHandler(Number.POSITIVE_INFINITY, (() => {}) as any)).toThrow(errorMessage);
+            expect(() => builder.withKeyboardHandler(Number.NEGATIVE_INFINITY, (() => {}) as any)).toThrow(errorMessage);
 
             //Will not throw
             expect(() => builder.withKeyboardHandler(0, (() => {}) as any)).not.toThrow();
@@ -310,7 +324,7 @@ describe('Key manager', () => {
 
         test('KeyManagerBuilder.withPageUpDown() Should throw an error if the second argument is not an optional number.', () => {
             const builder = keyManagerBuilder();
-            const errorMessage = 'KeyManagerBuilder.withPageUpDown(): Invalid second argument! It must be a boolean or nothing.'
+            let errorMessage = 'KeyManagerBuilder.withPageUpDown(): Invalid second argument! It must be a boolean or nothing.';
 
             expect(() => builder.withPageUpDown(true, '' as any)).toThrow(errorMessage);
             expect(() => builder.withPageUpDown(true, 'A' as any)).toThrow(errorMessage);
@@ -319,10 +333,17 @@ describe('Key manager', () => {
             expect(() => builder.withPageUpDown(true, {} as any)).toThrow(errorMessage);
             expect(() => builder.withPageUpDown(true, [] as any)).toThrow(errorMessage);
 
-            expect(() => builder.withPageUpDown(true, 0));
-            expect(() => builder.withPageUpDown(true, 1));
-            expect(() => builder.withPageUpDown(true, undefined));
-            expect(() => builder.withPageUpDown(true, null!));
+            errorMessage = 'KeyManagerBuilder.withPageUpDown(): Invalid second argument! NaN is not supported.';
+            expect(() => builder.withPageUpDown(true, NaN)).toThrow(errorMessage);
+
+            errorMessage = 'KeyManagerBuilder.withPageUpDown(): Invalid second argument! Infinite numbers are not supported.';
+            expect(() => builder.withPageUpDown(true, Number.POSITIVE_INFINITY)).toThrow(errorMessage);
+            expect(() => builder.withPageUpDown(true, Number.NEGATIVE_INFINITY)).toThrow(errorMessage);
+
+            expect(() => builder.withPageUpDown(true, 0)).not.toThrow();
+            expect(() => builder.withPageUpDown(true, 1)).not.toThrow();
+            expect(() => builder.withPageUpDown(true, undefined)).not.toThrow();
+            expect(() => builder.withPageUpDown(true, null!)).not.toThrow();
         });
 
         test('KeyManagerBuilder.withSkipPredicate() Should throw an error if provided argument is not a function.', () => {
@@ -381,9 +402,20 @@ describe('Key manager', () => {
             expect(() => builder.withTypeAhead({ reducer: (() => {}) as any })).not.toThrow(errorMessage);
         });
 
+        test('KeyManagerBuilder.withTypeAhead() should throw an error if the provided debounceInterval is NaN or infinite', () => {
+            let errorMessage = 'KeyManagerBuilder.withTypeAhead({ debounceInterval }): Invalid argument! NaN is not supported.';
+            const builder = keyManagerBuilder();
+
+            expect(() => builder.withTypeAhead({ debounceInterval: NaN })).toThrow(errorMessage);
+
+            errorMessage = 'KeyManagerBuilder.withTypeAhead({ debounceInterval }): Invalid argument! Infinite numbers are not supported.';
+            expect(() => builder.withTypeAhead({ debounceInterval: Number.POSITIVE_INFINITY })).toThrow(errorMessage);
+            expect(() => builder.withTypeAhead({ debounceInterval: Number.NEGATIVE_INFINITY })).toThrow(errorMessage);
+        })
+
         test('KeyManagerBuilder.withVerticalOrientation() Should throw an error if the provided argument is not an optional number.', () => {
             const builder = keyManagerBuilder();
-            const errorMessage = 'KeyManagerBuilder.withVerticalOrientation(): Invalid argument! It must be a number or nothing.';
+            let errorMessage = 'KeyManagerBuilder.withVerticalOrientation(): Invalid argument! It must be a number or nothing.';
 
             //Will throw
             expect(() => builder.withVerticalOrientation('' as any)).toThrow(errorMessage);
@@ -393,6 +425,13 @@ describe('Key manager', () => {
             expect(() => builder.withVerticalOrientation({} as any)).toThrow(errorMessage);
             expect(() => builder.withVerticalOrientation([] as any)).toThrow(errorMessage);
             expect(() => builder.withVerticalOrientation((() => {}) as any)).toThrow(errorMessage);
+
+            errorMessage = 'KeyManagerBuilder.withVerticalOrientation(): Invalid argument! NaN is not supported.';
+             expect(() => builder.withVerticalOrientation(NaN)).toThrow(errorMessage);
+
+            errorMessage = 'KeyManagerBuilder.withVerticalOrientation(): Invalid argument! Infinite numbers are not supported.';
+             expect(() => builder.withVerticalOrientation(Number.POSITIVE_INFINITY)).toThrow(errorMessage);
+             expect(() => builder.withVerticalOrientation(Number.NEGATIVE_INFINITY)).toThrow(errorMessage);
 
             //Will not throw
             expect(() => builder.withVerticalOrientation()).not.toThrow(errorMessage);
@@ -772,7 +811,7 @@ describe('Key manager', () => {
         });
 
         it('Should throw error if value of not a number type is assigned to jumpStep property.', () => {
-            const errorMessage = 'KeyManager.jumpStep: Failed to assign jumpStep. Expected a number.';
+            const errorMessage = 'KeyManager.jumpStep: Failed to assign jumpStep! Expected a number.';
             const manager = createManager();
 
             expect(() => manager.jumpStep = '' as any).toThrow(errorMessage);
@@ -784,6 +823,43 @@ describe('Key manager', () => {
             expect(() => manager.jumpStep = {} as any).toThrow(errorMessage);
             expect(() => manager.jumpStep = [] as any).toThrow(errorMessage);
             expect(() => manager.jumpStep = (() => {}) as any).toThrow(errorMessage);
+        });
+
+        it('Should throw error if value of NaN or infinite number is assigned to jumpStep property', () => {
+            let errorMessage = 'KeyManager.jumpStep: Failed to assign jumpStep! NaN is not supported.';
+            const manager = createManager();
+
+            expect(() => manager.jumpStep = NaN).throw(errorMessage);
+
+            errorMessage = 'KeyManager.jumpStep: Failed to assign jumpStep! Infinite numbers are not supported.';
+            expect(() => manager.jumpStep = Number.POSITIVE_INFINITY).throw(errorMessage);
+            expect(() => manager.jumpStep = Number.NEGATIVE_INFINITY).throw(errorMessage);
+        });
+
+        it('Should throw error if value of not a number type is assigned to typeAheadDebounceInterval property', () => {
+            const errorMessage = 'KeyManager.typeAheadDebounceInterval: Failed to assign typeAheadDebounceInterval! Expected a number.';
+            const manager = createManager();
+
+            expect(() => manager.typeAheadDebounceInterval = '' as any).toThrow(errorMessage);
+            expect(() => manager.typeAheadDebounceInterval = 'A' as any).toThrow(errorMessage);
+            expect(() => manager.typeAheadDebounceInterval = true as any).toThrow(errorMessage);
+            expect(() => manager.typeAheadDebounceInterval = false as any).toThrow(errorMessage);
+            expect(() => manager.typeAheadDebounceInterval = undefined as any).toThrow(errorMessage);
+            expect(() => manager.typeAheadDebounceInterval = null as any).toThrow(errorMessage);
+            expect(() => manager.typeAheadDebounceInterval = {} as any).toThrow(errorMessage);
+            expect(() => manager.typeAheadDebounceInterval = [] as any).toThrow(errorMessage);
+            expect(() => manager.typeAheadDebounceInterval = (() => {}) as any).toThrow(errorMessage);
+        });
+
+        it('Should throw error if value of NaN or infinite number is assigned to typeAheadDebounceInterval property', () => {
+            let errorMessage = 'KeyManager.typeAheadDebounceInterval: Failed to assign typeAheadDebounceInterval! NaN is not supported.';
+            const manager = createManager();
+
+            expect(() => manager.typeAheadDebounceInterval = NaN).throw(errorMessage);
+
+            errorMessage = 'KeyManager.typeAheadDebounceInterval: Failed to assign typeAheadDebounceInterval! Infinite numbers are not supported.';
+            expect(() => manager.typeAheadDebounceInterval = Number.POSITIVE_INFINITY).throw(errorMessage);
+            expect(() => manager.typeAheadDebounceInterval = Number.NEGATIVE_INFINITY).throw(errorMessage);
         });
 
         test('_KeyManagerImpl.pageUpAndDownDelta should be overridden and rounded down to integer not lesser then 1.', () => {
@@ -826,7 +902,7 @@ describe('Key manager', () => {
         });
 
         it('Should throw error if value of not a number type is assigned to pageUpAndDown property.', () => {
-            const errorMessage = 'KeyManager.pageUpAndDownDelta: Failed to assign jumpStep. Expected a number.';
+            const errorMessage = 'KeyManager.pageUpAndDownDelta: Failed to assign pageUpAndDownDelta! Expected a number.';
 
             let manager = createManager();
             expect(() => manager.pageUpAndDownDelta = '' as any).toThrow(errorMessage);
@@ -849,6 +925,17 @@ describe('Key manager', () => {
             expect(() => manager.pageUpAndDownDelta = {} as any).toThrow(errorMessage);
             expect(() => manager.pageUpAndDownDelta = [] as any).toThrow(errorMessage);
             expect(() => manager.pageUpAndDownDelta = (() => {}) as any).toThrow(errorMessage);
+        });
+
+        it('Should throw error if value of NaN or infinite number is assigned to pageUpAndDownDelta property', () => {
+            let errorMessage = 'KeyManager.pageUpAndDownDelta: Failed to assign pageUpAndDownDelta! NaN is not supported.';
+            const manager = createManager();
+
+            expect(() => manager.pageUpAndDownDelta = NaN).throw(errorMessage);
+
+            errorMessage = 'KeyManager.pageUpAndDownDelta: Failed to assign pageUpAndDownDelta! Infinite numbers are not supported.';
+            expect(() => manager.pageUpAndDownDelta = Number.POSITIVE_INFINITY).throw(errorMessage);
+            expect(() => manager.pageUpAndDownDelta = Number.NEGATIVE_INFINITY).throw(errorMessage);
         });
 
         test('_KeyManagerImpl._shouldWrap should be overridden.', () => {
@@ -1127,7 +1214,7 @@ describe('Key manager', () => {
                 manager.addItem(item);
             }
 
-            expect(manager._items).toEqual(items);
+            expect(manager._items).toBeEach(items);
             manager.removeItem(items[2]);
             expect(manager._items.includes(items[2])).toBe(false);
             //Removing again does nothing
@@ -1230,31 +1317,31 @@ describe('Key manager', () => {
                 manager.addItem(item);
             }
 
-            expect(manager._items).toEqual(items);
+            expect(manager._items).toBeEach(items);
 
             removal = items.splice(1, 1)[0];
             manager.removeItem(removal);
-            expect(manager._items).toEqual(items);
+            expect(manager._items).toBeEach(items);
 
             removal = items.splice(items.length - 2, 1)[0];
             manager.removeItem(removal);
-            expect(manager._items).toEqual(items);
+            expect(manager._items).toBeEach(items);
 
             removal = items.splice(1, 1)[0];
             manager.removeItem(removal);
-            expect(manager._items).toEqual(items);
+            expect(manager._items).toBeEach(items);
 
             removal = items.splice(items.length - 2, 1)[0]
             manager.removeItem(removal);
-            expect(manager._items).toEqual(items);
+            expect(manager._items).toBeEach(items);
 
             removal = items.splice(1, 1)[0];
             manager.removeItem(removal);
-            expect(manager._items).toEqual(items);
+            expect(manager._items).toBeEach(items);
 
             removal = items.splice(items.length - 2, 1)[0];
             manager.removeItem(removal);
-            expect(manager._items).toEqual(items);
+            expect(manager._items).toBeEach(items);
         });
 
         test('_KeyManagerImpl.itemsCount should reflect he length of the items list.', () => {
@@ -1498,9 +1585,9 @@ describe('Key manager', () => {
                 log.push(m, e);
             });
 
-            expect(log).toEqual([])
+            expect(log).toBeEach([])
             div.dispatchEvent(event);
-            expect(log).toEqual([ manager, event ]);
+            expect(log).toBeEach([ manager, event ]);
         });
 
         test('_KeyManagerImpl.onActiveItemDisabled() should throw error if argument is not a function.', () => {
@@ -1589,9 +1676,9 @@ describe('Key manager', () => {
                 }
             })
 
-            expect(log).toEqual([]);
+            expect(log).toBeEach([]);
             item.disabled = true;
-            expect(log).toEqual([ 'A', -1, null, 'B' ]);
+            expect(log).toBeEach([ 'A', -1, null, 'B' ]);
         });
 
         test('onActiveItemDisabled listener should receive manager instance, a disabled item and index of that item.', () => {
@@ -1611,7 +1698,7 @@ describe('Key manager', () => {
             const currentActive = manager.activeItem as TestItem
             expect(log).toEqual([]);
             currentActive.disabled = true;
-            expect(log).toEqual([ manager, currentActive, 4 ]);
+            expect(log).toBeEach([ manager, currentActive, 4 ]);
         });
 
         test('_KeyManagerImpl.onActiveItemRemoved() should throw error if provided argument is not a function.', () => {
@@ -1702,9 +1789,9 @@ describe('Key manager', () => {
                 }
             })
 
-            expect(log).toEqual([]);
+            expect(log).toBeEach([]);
             manager.removeItem(item);
-            expect(log).toEqual([ 'A', 'B', 0, -1, null, 'C' ]);
+            expect(log).toBeEach([ 'A', 'B', 0, -1, null, 'C' ]);
         });
 
         test('_KeyManagerImpl.Provider() should throw an error if the manager is disposed', () => {
@@ -2073,9 +2160,9 @@ describe('Key manager', () => {
                 });
             });
 
-            expect(log).toEqual([]);
+            expect(log).toBeEach([]);
             manager.clearActive();
-            expect(log).toEqual([ null, -1]);
+            expect(log).toBeEach([ null, -1]);
         });
 
         test('_KeyMangerImpl.setFistItemActive() should set the first item in the list and returns true.', () => {
@@ -4156,9 +4243,9 @@ describe('Key manager', () => {
             manager.bind(div);
 
 
-            expect(log).toEqual([]);
+            expect(log).toBeEach([]);
             div.dispatchEvent(event);
-            expect(log).toEqual([ manager, event ]);
+            expect(log).toBeEach([ manager, event ]);
         });
 
         test('The keyboardHandler should not be invoked if event.defaultPrevented is true', () => {
@@ -4383,7 +4470,7 @@ describe('Key manager', () => {
 
         it('Should throw an error if the reducer does not return a string.', () => {
             const log: string[] = [];
-            const errorMessage = 'ListKeyManager.withTypeAhead(): Invalid reducer return type! Expected a string.';
+            const errorMessage = 'KeyManagerBuilder.withTypeAhead(): Invalid reducer return type! Expected a string.';
             const errorHandler = (e: ErrorEvent) => {
                 e.preventDefault();
                 log.push(e.message);
@@ -4769,9 +4856,9 @@ describe('Key manager', () => {
                 });
             });
 
-            expect(log).toEqual([]);
+            expect(log).toBeEach([]);
             manager.removeItem(item);
-            expect(log).toEqual([ 0, '', false ]);
+            expect(log).toBeEach([ 0, '', false ]);
         });
 
         it('Should reset typeahead and invoke onActiveItemRemoved listeners in the same batch when the last item has been removed form key manager and that item was active.', () => {
@@ -5267,7 +5354,7 @@ describe('Key manager', () => {
             expect(manager.typing).toBe(false);
         });
 
-        it('Should not trigger typeahead if the keyboardHandler returns.', () => {
+        it('Should not trigger typeahead if the keyboardHandler returns true.', () => {
             const manager = createBoundManager((config) => {
                 config
                     .withTypeAhead()
@@ -6169,11 +6256,11 @@ describe('Key manager', () => {
 
         it('Should throw an error if accessability name accessor reached with useAccessabilityNameAccessor() has invalid return type.', () => {
             const log: string[] = [];
-            const errorMessage = 'KeyManagerBuilder.withAccessabilityNameAccessor() or <ProvideAccessibilityNameAccessor>: The return type of provided function must be a string!'
+            const errorMessage = 'KeyManagerBuilder.withAccessabilityNameAccessor() or <AccessabilityNameAccessorProvider>: The return type of provided function must be a string!'
 
             function Test() {
                 let returnValue: any
-                return <ProvideAccessabilityNameAccessor accessor={() => returnValue}>{() => {
+                return <AccessabilityNameAccessorProvider accessor={() => returnValue}>{() => {
 
                     // Will throw
                     returnValue = 0;
@@ -6202,7 +6289,7 @@ describe('Key manager', () => {
                     expect(() => new DOMElementKeyManagerItem(document.createElement('div'))).not.toThrow();
 
                     log.push('A')
-                }}</ProvideAccessabilityNameAccessor>
+                }}</AccessabilityNameAccessorProvider>
             }
 
             render(() => <Test/>, document.createElement('div'));
@@ -6761,11 +6848,11 @@ describe('Key manager', () => {
 
         it('Should throw an error if accessability name accessor reached with useAccessabilityNameAccessor() has invalid return type.', () => {
             const log: string[] = [];
-            const errorMessage = 'KeyManagerBuilder.withAccessabilityNameAccessor() or <ProvideAccessibilityNameAccessor>: The return type of provided function must be a string!'
+            const errorMessage = 'KeyManagerBuilder.withAccessabilityNameAccessor() or <AccessabilityNameAccessorProvider>: The return type of provided function must be a string!'
 
             function Test() {
                 let returnValue: any
-                return <ProvideAccessabilityNameAccessor accessor={() => returnValue}>{() => {
+                return <AccessabilityNameAccessorProvider accessor={() => returnValue}>{() => {
 
                     // Will throw
                     returnValue = 0;
@@ -6790,7 +6877,7 @@ describe('Key manager', () => {
                     expect(() => new FocusableDOMElementKeyManagerItem(document.createElement('div'))).not.toThrow();
 
                     log.push('A')
-                }}</ProvideAccessabilityNameAccessor>
+                }}</AccessabilityNameAccessorProvider>
             }
 
             render(() => <Test/>, document.createElement('div'));
@@ -6986,7 +7073,7 @@ describe('Key manager', () => {
 
             const elements = Array.from(document.querySelectorAll('.item'));
 
-            expect(manager._items.map((it) => (it as any).element)).toEqual(elements);
+            expect(manager._items.map((it) => (it as any).element)).toBeEach(elements);
             expect(manager.activeItem).toBe(null);
             expect(elements[2].classList.contains('foo')).toBe(false);
             expect(elements[3].classList.contains('baz')).toBe(false);
@@ -7091,7 +7178,7 @@ describe('Key manager', () => {
 
             const elements = Array.from(document.querySelectorAll('.item'));
 
-            expect(manager._items.map((it) => (it as any).element)).toEqual(elements);
+            expect(manager._items.map((it) => (it as any).element)).toBeEach(elements);
             expect(manager.activeItem).toBe(null);
             expect(elements[2].classList.contains('foo')).toBe(false);
             expect(elements[3].classList.contains('baz')).toBe(false);

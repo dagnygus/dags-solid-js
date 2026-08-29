@@ -1,6 +1,9 @@
 import { createEffect, createRoot, createSignal, getOwner, JSX, Show } from "solid-js";
-import { _eachPotentialTabbable, _getCurrentAssignedOrigin, focusAutoCapture, focusTrap, focusVia, getFocusedElement, hasFocusedElement, isFocused, monitorFocusOrigin, observeHasFocusedElement, observeIsFocused } from "./focus-management";
+import { _eachPotentialTabbable, _elementFilter, _getCurrentAssignedOrigin, focusAutoCapture, focusTrap, focusVia, getFocusedElement, hasFocusedElement, isFocused, monitorFocusOrigin, observeHasFocusedElement, observeIsFocused } from "./focus-management";
 import { MountableElement, render as solidRender } from "solid-js/web";
+import { _createElementIterator } from "../../internals/utils";
+import { _installMockPromise } from "../../test-utils/mock-promise";
+import { _MockMutationObserver } from "../../test-utils/mock-mutation-observer";
 
 const enum Origin {
     Program = 'program',
@@ -9,12 +12,17 @@ const enum Origin {
 }
 
 const pendingEffects: (() => void)[] = vitest.hoisted(() => []);
+const reactions: (() => void)[] = vitest.hoisted(() => []);
 const disposeBag: (() => void)[] = [];
+const microtasks: (() => void)[] = vitest.hoisted(() => []); 
 let manualEffectsMode = vitest.hoisted(() => true);
+let manualReactionsMode = vitest.hoisted(() => false);
 
 
 vitest.mock(import('./focus-management'), (importModule) => {
     (globalThis as any).__IS_SERVER__ = false;
+    vitest.spyOn(performance, 'now').mockImplementation(() => 0);
+    vitest.stubGlobal('queueMicrotask', (fn: () => void) => { microtasks.push(fn); });
     return importModule();
 });
 
@@ -24,6 +32,8 @@ vitest.mock(import('solid-js'), async (importOgModule) => {
     const ogCreateEffect = ogModule.createEffect;
     const getOwner = ogModule.getOwner;
     const runWithOwner = ogModule.runWithOwner;
+    const onCleanup = ogModule.onCleanup
+    const ogCreateReaction = ogModule.createReaction;
 
     const fakeOnMount: typeof ogOnMount = (cb: () => void) => {
         if (manualEffectsMode) {
@@ -43,16 +53,43 @@ vitest.mock(import('solid-js'), async (importOgModule) => {
         }
     }) as any;
 
+    const fakeCreateReaction: typeof ogCreateReaction = (onInvalidate) => {
+        if (!manualReactionsMode) {
+            return ogCreateReaction(onInvalidate);
+        }
+        reactions.push(onInvalidate);
+        onCleanup(() => {
+            const index = reactions.indexOf(onInvalidate);
+            if (index > -1) {
+                reactions.splice(index, 1);
+            }
+        })
+        return (tracking) => { tracking(); }
+    }
+
     return {
         ...ogModule,
         onMount: fakeOnMount,
-        createEffect: fakeCreateEffect
+        createEffect: fakeCreateEffect,
+        createReaction: fakeCreateReaction
     }
-})
+});
+
+function flushMicrotasks(): void {
+    while(microtasks.length) {
+        microtasks.shift()!();
+    }
+}
 
 function fireEffects(): void {
     while (pendingEffects.length) {
         pendingEffects.shift()!();
+    }
+}
+
+function fireReactions(): void {
+    for (const onInvalidate of reactions) {
+        onInvalidate();
     }
 }
 
@@ -68,11 +105,11 @@ function discardPendingEffects(): void {
     pendingEffects.splice(0);
 }
 
-function dispose(assertNoPendingEffectsAndMicrotask = false): void {
+function dispose(assertNoPendingEffects = false): void {
     while (disposeBag.length) {
         disposeBag.shift()!();
     }
-    if (assertNoPendingEffectsAndMicrotask && pendingEffects.length) {
+    if (assertNoPendingEffects && pendingEffects.length) {
         throw new Error('There are still pending effects.');
     }
 }
@@ -98,15 +135,25 @@ function render(code: () => JSX.Element, element: MountableElement, init?: JSX.E
     return dispose;
 }
 
+beforeAll(() => {
+    vitest.stubGlobal('MutationObserver', _MockMutationObserver);
+})
+
 afterEach(() => {
-        Array.from(document.body.children).forEach((node) => node.remove());
-        dispose(true);
-    });
+    Array.from(document.body.children).forEach((node) => node.remove());
+    flushMicrotasks();
+    dispose(true);
+    if (microtasks.length) {
+        throw new Error('There are still pending microtasks');
+    }
+});
 
 afterAll(() => {
     delete (globalThis as any).__IS_SERVER__;
     vitest.doUnmock('./focus-origin');
     vitest.doUnmock('solid-js');
+    vitest.resetAllMocks();
+    vitest.unstubAllGlobals();
 });
 
 describe('monitorFocusOrigin()', () => {
@@ -143,7 +190,7 @@ describe('monitorFocusOrigin()', () => {
     });
 
     it('Should throw an error if the second argument is not an optional boolean.', () => {
-        const errorMessage = 'monitorFocus(): Invalid second argument! Expected a boolean or nothing.';
+        const errorMessage = 'monitorFocusOrigin(): Invalid second argument! Expected a boolean or nothing.';
         const div = document.createElement('div');
 
         expect(() => monitorFocusOrigin(div, 0 as any)).toThrow(errorMessage);
@@ -180,7 +227,7 @@ describe('monitorFocusOrigin()', () => {
         discardPendingEffects();
     });
 
-    it('Should observe focus correctly when an element instance is provided directly.', async () => {
+    it('Should observe focus correctly when an element instance is provided directly.', () => {
         const log: any[] = [];
         const div = document.body.appendChild(document.createElement('div'));
         const origin = monitorFocusOrigin(div);
@@ -200,34 +247,34 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -235,12 +282,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
@@ -248,12 +295,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElSpy.mockRestore();
@@ -263,11 +310,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', noopHandler);
@@ -277,11 +324,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', noopHandler);
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', handlerWithStopPropagate);
@@ -289,22 +336,22 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe('program');
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.addEventListener('keydown', handler);
         div.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', noopHandler);
@@ -314,11 +361,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', noopHandler);
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', handlerWithStopPropagate);
@@ -326,11 +373,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         expect(log).toEqual([
@@ -361,7 +408,7 @@ describe('monitorFocusOrigin()', () => {
         
     });
 
-    it('Should observe focus correctly until disposal when an element instance is provided directly.', async () => {
+    it('Should observe focus correctly until disposal when an element instance is provided directly.', () => {
         const log: any[] = [];
         const div = document.body.appendChild(document.createElement('div'));
         const origin = inRoot(() => monitorFocusOrigin(div));
@@ -381,34 +428,34 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -416,12 +463,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
@@ -429,12 +476,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElSpy.mockRestore();
@@ -444,11 +491,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', noopHandler);
@@ -458,11 +505,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', noopHandler);
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', handlerWithStopPropagate);
@@ -470,22 +517,22 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe('program');
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.addEventListener('keydown', handler);
         div.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', noopHandler);
@@ -495,11 +542,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', noopHandler);
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', handlerWithStopPropagate);
@@ -507,11 +554,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         expect(log).toEqual([
@@ -552,7 +599,7 @@ describe('monitorFocusOrigin()', () => {
         
     });
 
-    it('Should observe focus correctly when an element instance is provided eagerly.', async () => {
+    it('Should observe focus correctly when an element instance is provided eagerly.', () => {
         const log: any[] = [];
         const div = document.body.appendChild(document.createElement('div'));
         const origin = monitorFocusOrigin(() => div);
@@ -572,34 +619,34 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -607,12 +654,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
@@ -620,12 +667,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElSpy.mockRestore();
@@ -635,11 +682,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', noopHandler);
@@ -649,11 +696,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', noopHandler);
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', handlerWithStopPropagate);
@@ -661,22 +708,22 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe('program');
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.addEventListener('keydown', handler);
         div.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', noopHandler);
@@ -686,11 +733,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', noopHandler);
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', handlerWithStopPropagate);
@@ -698,11 +745,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         expect(log).toEqual([
@@ -732,7 +779,7 @@ describe('monitorFocusOrigin()', () => {
         ]);
     });
 
-    it('Should observe focus correctly until disposal when an element instance is provided eagerly.', async () => {
+    it('Should observe focus correctly until disposal when an element instance is provided eagerly.', () => {
         const log: any[] = [];
         const div = document.body.appendChild(document.createElement('div'));
         const origin = inRoot(() => monitorFocusOrigin(() => div));
@@ -752,34 +799,34 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -787,12 +834,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
@@ -800,12 +847,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElSpy.mockRestore();
@@ -815,11 +862,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', noopHandler);
@@ -829,11 +876,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', noopHandler);
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', handlerWithStopPropagate);
@@ -841,22 +888,22 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe('program');
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.addEventListener('keydown', handler);
         div.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', noopHandler);
@@ -866,11 +913,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', noopHandler);
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', handlerWithStopPropagate);
@@ -878,11 +925,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         expect(log).toEqual([
@@ -922,7 +969,7 @@ describe('monitorFocusOrigin()', () => {
         expect(log).toEqual([]);
     });
 
-    it('Should observe focus correctly until disposal when an element instance is provided lazily.', async () => {
+    it('Should observe focus correctly until disposal when an element instance is provided lazily.', () => {
         const log: any[] = [];
         let div: HTMLDivElement = null!;
         const origin = inRoot(() => monitorFocusOrigin(() => div));
@@ -946,34 +993,34 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -981,12 +1028,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
@@ -994,12 +1041,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = div;
         div.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         div.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElSpy.mockRestore();
@@ -1009,11 +1056,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', noopHandler);
@@ -1023,11 +1070,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', noopHandler);
         div.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('pointerdown', handlerWithStopPropagate);
@@ -1035,22 +1082,22 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe('program');
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('pointerdown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.addEventListener('keydown', handler);
         div.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', noopHandler);
@@ -1060,11 +1107,11 @@ describe('monitorFocusOrigin()', () => {
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', noopHandler);
         div.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.addEventListener('keydown', handlerWithStopPropagate);
@@ -1072,11 +1119,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         div.dispatchEvent(new FocusEvent('focus'));
         div.removeEventListener('keydown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         div.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         expect(log).toEqual([
@@ -1116,7 +1163,7 @@ describe('monitorFocusOrigin()', () => {
         expect(log).toEqual([]);
     });
 
-    it('Should observe child focus correctly when an element instance is provided directly.', async () => {
+    it('Should observe child focus correctly when an element instance is provided directly.', () => {
         const log: any[] = [];
         const parent = document.body.appendChild(document.createElement('div'));
         const child = parent.appendChild(document.createElement('div'));
@@ -1137,34 +1184,34 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -1172,12 +1219,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1186,12 +1233,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         
         activeElSpy.mockRestore();
@@ -1201,11 +1248,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1216,11 +1263,11 @@ describe('monitorFocusOrigin()', () => {
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('pointerdown', noopHandler);
         child.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1229,11 +1276,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('pointerdown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.addEventListener('keydown', handler);
@@ -1241,11 +1288,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1256,11 +1303,11 @@ describe('monitorFocusOrigin()', () => {
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('keydown', noopHandler);
         child.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1269,11 +1316,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('keydown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         expect(log).toEqual([
@@ -1303,7 +1350,7 @@ describe('monitorFocusOrigin()', () => {
         ]);
     });
 
-    it('Should observe child focus correctly when an element instance is provided eagerly.', async () => {
+    it('Should observe child focus correctly when an element instance is provided eagerly.', () => {
         const log: any[] = [];
         const parent = document.body.appendChild(document.createElement('div'));
         const child = parent.appendChild(document.createElement('div'));
@@ -1324,34 +1371,34 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -1359,12 +1406,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1373,12 +1420,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         
         activeElSpy.mockRestore();
@@ -1388,11 +1435,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1403,11 +1450,11 @@ describe('monitorFocusOrigin()', () => {
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('pointerdown', noopHandler);
         child.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1416,11 +1463,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('pointerdown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.addEventListener('keydown', handler);
@@ -1428,11 +1475,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1443,11 +1490,11 @@ describe('monitorFocusOrigin()', () => {
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('keydown', noopHandler);
         child.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1456,11 +1503,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('keydown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         expect(log).toEqual([
@@ -1490,7 +1537,7 @@ describe('monitorFocusOrigin()', () => {
         ]);
     });
 
-    it('Should observe child focus correctly when an element instance is provided lazily.', async () => {
+    it('Should observe child focus correctly when an element instance is provided lazily.', () => {
         const log: any[] = [];
         let parent: HTMLDivElement = null!;
         const origin = inRoot(() => monitorFocusOrigin(() => parent, true));
@@ -1515,34 +1562,34 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -1550,12 +1597,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Pointer);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1564,12 +1611,12 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Keyboard);
         activeElement = child;
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         activeElement = null;
         child.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         
         activeElSpy.mockRestore();
@@ -1579,11 +1626,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1594,11 +1641,11 @@ describe('monitorFocusOrigin()', () => {
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('pointerdown', noopHandler);
         child.removeEventListener('pointerdown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1607,11 +1654,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('pointerdown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.addEventListener('keydown', handler);
@@ -1619,11 +1666,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1634,11 +1681,11 @@ describe('monitorFocusOrigin()', () => {
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('keydown', noopHandler);
         child.removeEventListener('keydown', handler);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
 
@@ -1647,11 +1694,11 @@ describe('monitorFocusOrigin()', () => {
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
         child.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
         child.removeEventListener('keydown', handlerWithStopPropagate);
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
         expect(_getCurrentAssignedOrigin()).toBe(Origin.Program);
 
         expect(log).toEqual([
@@ -1682,7 +1729,7 @@ describe('monitorFocusOrigin()', () => {
 
     });
 
-    it('Should ignore synthetic keyboard event without real focus change.', async () => {
+    it('Should ignore synthetic keyboard event without real focus change.', () => {
         const log: any[] = [];
         const div = document.body.appendChild(document.createElement('div'));
 
@@ -1697,22 +1744,22 @@ describe('monitorFocusOrigin()', () => {
 
         div.dispatchEvent(new FocusEvent('focus'));
 
-        await Promise.resolve();
+        flushMicrotasks();
 
         div.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
 
-        await Promise.resolve();
+        flushMicrotasks();
 
         div.dispatchEvent(new FocusEvent('focus'));
 
-        await Promise.resolve();
+        flushMicrotasks();
         
         expect(log).toEqual([
             undefined
         ]);
     });
 
-    it('Should log error message to the console if propagation is stopped.', async () => {
+    it('Should log error message to the console if propagation is stopped.', () => {
         function getErrorMessage(type: 'keydown' | 'pointerdown'): string {
             return (
                 `monitorFocus(): ${type}.stopPropagation() was called. ` +
@@ -1740,16 +1787,16 @@ describe('monitorFocusOrigin()', () => {
         div1.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         activeElement = div1;
         div1.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
 
         activeElement = null;
         div1.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
 
         div1.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         activeElement = div1;
         div1.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
 
         expect(log).toEqual([ undefined, getErrorMessage('keydown'), Origin.Program, undefined, getErrorMessage('pointerdown'), Origin.Program ]);
 
@@ -1768,21 +1815,21 @@ describe('monitorFocusOrigin()', () => {
         div2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         activeElement = div2;
         div2.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
 
         activeElement = null;
         div2.dispatchEvent(new FocusEvent('blur'));
-        await Promise.resolve();
+        flushMicrotasks();
 
         div2.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         activeElement = div2;
         div2.dispatchEvent(new FocusEvent('focus'));
-        await Promise.resolve();
+        flushMicrotasks();
 
         expect(log).toEqual([ undefined, getErrorMessage('keydown'), Origin.Program, undefined, getErrorMessage('pointerdown'), Origin.Program ]);
     });
 
-    it('Should log error message to the console for child if propagation is stopped.', async () => {
+    it('Should log error message to the console for child if propagation is stopped.', () => {
         function getErrorMessage(type: 'keydown' | 'pointerdown'): string {
             return (
                 `monitorFocus(): ${type}.stopPropagation() was called. ` +
@@ -1811,16 +1858,16 @@ describe('monitorFocusOrigin()', () => {
         child1.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         activeElement = child1;
         child1.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
 
         activeElement = null;
         child1.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
 
         child1.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         activeElement = child1;
         child1.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
 
 
         expect(log).toEqual([ undefined, getErrorMessage('keydown'), Origin.Program, undefined, getErrorMessage('pointerdown'), Origin.Program ]);
@@ -1840,22 +1887,22 @@ describe('monitorFocusOrigin()', () => {
         child2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         activeElement = child2;
         child2.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
 
         activeElement = null;
         child2.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
 
         child2.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         activeElement = child2;
         child2.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-        await Promise.resolve();
+        flushMicrotasks();
 
         expect(log).toEqual([ undefined, getErrorMessage('keydown'), Origin.Program, undefined, getErrorMessage('pointerdown'), Origin.Program ]);
 
     });
 
-    it('Should ignore focus changes from descendant elements if second argument is not provided.', async () => {
+    it('Should ignore focus changes from descendant elements if second argument is not provided.', () => {
         const log: (string | undefined)[] = [];
         const parent = document.body.appendChild(document.createElement('div'));
         const child = parent.appendChild(document.createElement('div'));
@@ -1871,16 +1918,16 @@ describe('monitorFocusOrigin()', () => {
             bubbles: true
         }));
         child.focus();
-        await Promise.resolve();
+        flushMicrotasks();
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
 
         child.dispatchEvent(new PointerEvent('pointerdown', {
             bubbles: true
         }));
         child.focus();
-        await Promise.resolve();
+        flushMicrotasks();
 
         expect(origin()).toBeUndefined();
 
@@ -1889,7 +1936,7 @@ describe('monitorFocusOrigin()', () => {
         ]);
     });
 
-    it('Should ignore focus changes from descendant elements if second argument is false.', async () => {
+    it('Should ignore focus changes from descendant elements if second argument is false.', () => {
         const log: (string | undefined)[] = [];
         const parent = document.body.appendChild(document.createElement('div'));
         const child = parent.appendChild(document.createElement('div'));
@@ -1905,16 +1952,16 @@ describe('monitorFocusOrigin()', () => {
             bubbles: true
         }));
         child.focus();
-        await Promise.resolve();
+        flushMicrotasks();
 
         child.blur();
-        await Promise.resolve();
+        flushMicrotasks();
 
         child.dispatchEvent(new PointerEvent('pointerdown', {
             bubbles: true
         }));
         child.focus();
-        await Promise.resolve();
+        flushMicrotasks();
 
         expect(origin()).toBeUndefined();
 
@@ -1934,7 +1981,6 @@ describe('monitorFocusOrigin()', () => {
         expect(document.activeElement).toBe(div);
         expect(origin.toString()).toBe('() => undefined');
         expect(origin()).toBe(undefined);
-        
     });
 
 });
@@ -2355,7 +2401,7 @@ describe('observeIsFocused()', () => {
         focusVia(div, 'program');
         div.blur();
 
-        expect([ false, true, false, true, false, true, false, true, false ]);
+        expect(log).toEqual([ false, true, false, true, false, true, false, true, false ]);
     });
 
     it('Should observe the focus state reactively when an element is provided eagerly.', () => {
@@ -2376,7 +2422,7 @@ describe('observeIsFocused()', () => {
         focusVia(div, 'program');
         div.blur();
 
-        expect([ false, true, false, true, false, true, false, true, false ]);
+        expect(log).toEqual([ false, true, false, true, false, true, false, true, false ]);
     });
 
     it('Should observe the focus state reactively when an element is provided lazily.', () => {
@@ -2399,7 +2445,7 @@ describe('observeIsFocused()', () => {
         focusVia(div, 'program');
         div.blur();
 
-        expect([ false, true, false, true, false, true, false, true, false ]);
+        expect(log).toEqual([ false, true, false, true, false, true, false, true, false ]);
     });
 
     it('Should not observe the child focus state reactively when the element is provided directly.', () => {
@@ -2421,7 +2467,7 @@ describe('observeIsFocused()', () => {
         focusVia(child, 'program');
         child.blur();
 
-        expect([ false ]);
+        expect(log).toEqual([ false ]);
     });
 
     it('Should not observe the child focus state reactively when the element is provided eagerly.', () => {
@@ -2443,7 +2489,7 @@ describe('observeIsFocused()', () => {
         focusVia(child, 'program');
         child.blur();
 
-        expect([ false ]);
+        expect(log).toEqual([ false ]);
     });
 
     it('Should not observe the child focus state reactively when the element is provided lazily.', () => {
@@ -2467,7 +2513,7 @@ describe('observeIsFocused()', () => {
         focusVia(child, 'program');
         child.blur();
 
-        expect([ false ]);
+        expect(log).toEqual([ false ]);
     });
 
     it('Should return a false accessor in a server environment.', () => {
@@ -2556,7 +2602,7 @@ describe('observeHasFocusedElement()', () => {
         focusVia(div, 'program');
         div.blur();
 
-        expect([ false, true, false, true, false, true, false, true, false ]);
+        expect(log).toEqual([ false, true, false, true, false, true, false, true, false ]);
     });
 
     it('Should observe the focus state reactively when the element is provided eagerly.', () => {
@@ -2577,7 +2623,7 @@ describe('observeHasFocusedElement()', () => {
         focusVia(div, 'program');
         div.blur();
 
-        expect([ false, true, false, true, false, true, false, true, false ]);
+        expect(log).toEqual([ false, true, false, true, false, true, false, true, false ]);
     });
 
     it('Should observe the focus state reactively when the element is provided lazily.', () => {
@@ -2600,7 +2646,7 @@ describe('observeHasFocusedElement()', () => {
         focusVia(div, 'program');
         div.blur();
 
-        expect([ false, true, false, true, false, true, false, true, false ]);
+        expect(log).toEqual([ false, true, false, true, false, true, false, true, false ]);
     });
 
     it('Should observe the child focus state reactively when the element is provided directly.', () => {
@@ -2622,7 +2668,7 @@ describe('observeHasFocusedElement()', () => {
         focusVia(child, 'program');
         child.blur();
 
-        expect([ false, true, false, true, false, true, false, true, false ]);
+        expect(log).toEqual([ false, true, false, true, false, true, false, true, false ]);
     });
 
     it('Should observe the child focus state reactively when the element is provided eagerly.', () => {
@@ -2668,7 +2714,7 @@ describe('observeHasFocusedElement()', () => {
         focusVia(child, 'program');
         child.blur();
 
-        expect([ false, true, false, true, false, true, false, true, false ]);
+        expect(log).toEqual([ false, true, false, true, false, true, false, true, false ]);
     });
 
     it('Should return a false accessor in a server environment.', () => {
@@ -2723,10 +2769,10 @@ describe('_eachPotentialFocusable()', () => {
 
         const items: { element: Element, priority: number }[] = [];
 
-         _eachPotentialTabbable(container, (item) => items.push(item));
+         _eachPotentialTabbable(_createElementIterator(container, _elementFilter), (item) => items.push(item));
 
-        expect(items.map((it) => it ? it.element : null)).toEqual([ container, div2, div4, div5, div8, div9, div10, div12, div13, input, button, textarea, select ]);
-        expect(items.filter((it) => it !== null).map(it => it.priority)).toEqual([0, 0, 0, 0, 1, 2, 2, 0, 0, 0, 0, 0, 0]);
+        expect(items.map((it) => it ? it.element : null)).toBeEach([ container, div2, div4, div5, div8, div9, div10, div12, div13, input, button, textarea, select ]);
+        expect(items.filter((it) => it !== null).map(it => it.priority)).toBeEach([0, 0, 0, 0, 1, 2, 2, 0, 0, 0, 0, 0, 0]);
     });
 
     it('Should invoke the callback for all potential tabbable elements across shadow dom bounders.', () => {
@@ -2744,9 +2790,9 @@ describe('_eachPotentialFocusable()', () => {
 
         const elements: Element[] = [];
         
-        _eachPotentialTabbable(root, (item) => elements.push(item.element));
+        _eachPotentialTabbable(_createElementIterator(root, _elementFilter), (item) => elements.push(item.element));
 
-        expect(elements).toEqual([ input1, input2, input3, input4 ]);
+        expect(elements).toBeEach([ input1, input2, input3, input4 ]);
     });
 
     it('Should invoke callback for all not disabled native focusable controls.', () => {
@@ -2778,9 +2824,9 @@ describe('_eachPotentialFocusable()', () => {
 
         const elements: Element[] = [];
         
-        _eachPotentialTabbable(container, (item) => elements.push(item.element));
+        _eachPotentialTabbable(_createElementIterator(container, _elementFilter), (item) => elements.push(item.element));
 
-        expect(elements).toEqual([ button1, button2, input1, input2, select1, select2, textarea1, textarea2 ]);
+        expect(elements).toBeEach([ button1, button2, input1, input2, select1, select2, textarea1, textarea2 ]);
     });
 
     it('Should not invoke callback for all controls inside a disabled fieldset.', () => {
@@ -2802,9 +2848,9 @@ describe('_eachPotentialFocusable()', () => {
 
         const elements: Element[] = [];
         
-        _eachPotentialTabbable(container, (item) => elements.push(item.element));
+        _eachPotentialTabbable(_createElementIterator(container, _elementFilter), (item) => elements.push(item.element));
 
-        expect(elements).toEqual([ button1, input1, select1, textarea1 ]);
+        expect(elements).toBeEach([ button1, input1, select1, textarea1 ]);
     });
 
     it('Should not invoke callback for all potential tabbable elements inside inert container.', () => {
@@ -2834,9 +2880,9 @@ describe('_eachPotentialFocusable()', () => {
 
         const elements: Element[] = [];
         
-        _eachPotentialTabbable(container, (item) => elements.push(item.element));
+        _eachPotentialTabbable(_createElementIterator(container, _elementFilter), (item) => elements.push(item.element));
 
-        expect(elements).toEqual([ button1, input1, select1, textarea1, div1, div2 ]);
+        expect(elements).toBeEach([ button1, input1, select1, textarea1, div1, div2 ]);
     });
 
     it('Should not invoke callback at all if a container is inert.', () => {
@@ -2856,9 +2902,9 @@ describe('_eachPotentialFocusable()', () => {
 
         const elements: Element[] = [];
         
-        _eachPotentialTabbable(container, (item) => elements.push(item.element));
+        _eachPotentialTabbable(_createElementIterator(container, _elementFilter), (item) => elements.push(item.element));
 
-        expect(elements).toEqual([]);
+        expect(elements).toBeEach([]);
     });
 
     it('Should not invoke callback at all if a container is disconnected from document.', () => {
@@ -2877,9 +2923,9 @@ describe('_eachPotentialFocusable()', () => {
         
         const elements: Element[] = [];
         
-        _eachPotentialTabbable(container, (item) => elements.push(item.element));
+        _eachPotentialTabbable(_createElementIterator(container, _elementFilter), (item) => elements.push(item.element));
 
-        expect(elements).toEqual([]);
+        expect(elements).toBeEach([]);
     })
 
     it('Should not invoke callback for an option element.', () => {
@@ -2891,22 +2937,23 @@ describe('_eachPotentialFocusable()', () => {
 
         const elements: Element[] = [];
         
-        _eachPotentialTabbable(container, (item) => elements.push(item.element));
+        _eachPotentialTabbable(_createElementIterator(container, _elementFilter), (item) => elements.push(item.element));
 
-        expect(elements).toEqual([]);
+        expect(elements).toBeEach([]);
     });
 
 });
 
 describe('focusTrap()', () => {
+
     beforeAll(() => {
         manualEffectsMode = false;
-        vitest.useFakeTimers({ toFake: ['queueMicrotask', 'performance', 'setImmediate'] });
+        manualReactionsMode = true;
     });
+
     afterAll(() => {
-        vitest.runAllTimers();
         manualEffectsMode = true;
-        vitest.useRealTimers();
+        manualReactionsMode = false;
     });
 
     it('Should throw an error in a server environment.', () => {
@@ -2934,8 +2981,6 @@ describe('focusTrap()', () => {
         expect(() => inRoot(() => focusTrap((() => {}) as any))).toThrow(errorMessage);
 
         expect(() => inRoot(() => focusTrap(div))).not.toThrow();
-
-        vitest.runAllTicks();
     });
 
     it('Should throw an error if used outside an owning context.', () => {
@@ -2975,7 +3020,7 @@ describe('focusTrap()', () => {
 
         
         render(() => <TestComponent/>, document.body.appendChild(document.createElement('div')), undefined);
-        vitest.runAllTicks();
+        flushMicrotasks();
 
         const container = document.getElementById('container') as HTMLElement;
 
@@ -3014,7 +3059,7 @@ describe('focusTrap()', () => {
 
     });
 
-    it('Should move focus to the next element that can be focused.', async () => {
+    it('Should move focus to the next element that can be focused.', () => {
         const container = document.body.appendChild(document.createElement('div'));
         const child1 = container.appendChild(document.createElement('div'));
         const child2 = container.appendChild(document.createElement('div'));
@@ -3032,7 +3077,7 @@ describe('focusTrap()', () => {
         child4.focus = () => {};
 
         inRoot(() => focusTrap(container));
-        await vitest.runAllTimersAsync();
+        flushMicrotasks();
 
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         expect(isFocused(child1)).toBe(true);
@@ -3045,9 +3090,21 @@ describe('focusTrap()', () => {
 
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         expect(isFocused(child1)).toBe(true);
+
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, shiftKey: true })); 
+        expect(isFocused(child5)).toBe(true);
+
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, shiftKey: true })); 
+        expect(isFocused(child3)).toBe(true);
+
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, shiftKey: true })); 
+        expect(isFocused(child1)).toBe(true);
+
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, shiftKey: true })); 
+        expect(isFocused(child5)).toBe(true);
     });
 
-    it('Should move focus from the first element that was focused when the trap was created.', async () => {
+    it('Should move focus from the first element that was focused when the trap was created.', () => {
         const container = document.body.appendChild(document.createElement('div'));
         const child1 = container.appendChild(document.createElement('div'));
         const child2 = container.appendChild(document.createElement('div'));
@@ -3066,7 +3123,7 @@ describe('focusTrap()', () => {
         child1.focus();
 
         inRoot(() => focusTrap(container));
-        await vitest.runAllTimersAsync();
+        flushMicrotasks();
 
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         expect(isFocused(child2)).toBe(true);
@@ -3082,7 +3139,7 @@ describe('focusTrap()', () => {
         expect(isFocused(child1)).toBe(true);
     });
 
-    it('Should move focus from the last element that was focused when the trap was created.', async () => {
+    it('Should move focus from the last element that was focused when the trap was created.', () => {
         const container = document.body.appendChild(document.createElement('div'));
         const child1 = container.appendChild(document.createElement('div'));
         const child2 = container.appendChild(document.createElement('div'));
@@ -3101,7 +3158,7 @@ describe('focusTrap()', () => {
         child6.focus();
 
         inRoot(() => focusTrap(container));
-        await vitest.runAllTimersAsync();
+        flushMicrotasks();
 
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         expect(isFocused(child1)).toBe(true);
@@ -3117,7 +3174,7 @@ describe('focusTrap()', () => {
         expect(isFocused(child6)).toBe(true);
     });
 
-    it('Should move focus from an element that was already focused when the trap was created.', async () => {
+    it('Should move focus from an element that was already focused when the trap was created.', () => {
         const container = document.body.appendChild(document.createElement('div'));
         const child1 = container.appendChild(document.createElement('div'));
         const child2 = container.appendChild(document.createElement('div'));
@@ -3136,7 +3193,7 @@ describe('focusTrap()', () => {
         child3.focus();
 
         inRoot(() => focusTrap(container));
-        await vitest.runAllTimersAsync();
+        flushMicrotasks();
 
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         expect(isFocused(child4)).toBe(true);
@@ -3152,7 +3209,46 @@ describe('focusTrap()', () => {
         expect(isFocused(child3)).toBe(true);
     });
 
-    it('Should move focus correctly even if a preceding item has been removed.', async () => {
+    it('Should move focus correctly even if a preceding item has been removed.', () => {
+        const container = document.body.appendChild(document.createElement('div'));
+        const child1 = container.appendChild(document.createElement('div'));
+        const child2 = container.appendChild(document.createElement('div'));
+        const child3 = container.appendChild(document.createElement('div'));
+        const child4 = container.appendChild(document.createElement('div'));
+        const child5 = container.appendChild(document.createElement('div'));
+        const child6 = container.appendChild(document.createElement('div'));
+
+        child1.tabIndex = 0;
+        child2.tabIndex = 0;
+        child3.tabIndex = 0;
+        child4.tabIndex = 0;
+        child5.tabIndex = 0;
+        child6.tabIndex = 0; 
+
+        child4.focus();
+        
+        inRoot(() => focusTrap(container));
+        fireEffects();
+
+        flushMicrotasks();
+
+        child2.remove();
+        _MockMutationObserver.triggerRemove(container, child2);
+        fireReactions();
+        flushMicrotasks();
+
+        expect(isFocused(child4)).toBe(true);
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+        expect(isFocused(child5)).toBe(true);
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+        expect(isFocused(child6)).toBe(true);
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+        expect(isFocused(child1)).toBe(true);
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+        expect(isFocused(child3)).toBe(true);
+    });
+
+    it('Should move focus to newly added child', () => {
         const container = document.body.appendChild(document.createElement('div'));
         const child1 = container.appendChild(document.createElement('div'));
         const child2 = container.appendChild(document.createElement('div'));
@@ -3171,23 +3267,27 @@ describe('focusTrap()', () => {
         child4.focus();
         
         inRoot(() => focusTrap(container));
-        await vitest.runAllTimersAsync();
+        flushMicrotasks();
 
-        child2.remove();
-        await vitest.runAllTimersAsync();
+        const newChild = document.createElement('div'); 
+        newChild.tabIndex = 0;
+        container.insertBefore(newChild, child5);
+        _MockMutationObserver.triggerAdd(container, newChild);
+        fireReactions();
+        flushMicrotasks();
 
         expect(isFocused(child4)).toBe(true);
+        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+        expect(isFocused(newChild)).toBe(true);
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         expect(isFocused(child5)).toBe(true);
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         expect(isFocused(child6)).toBe(true);
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
         expect(isFocused(child1)).toBe(true);
-        container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
-        expect(isFocused(child3)).toBe(true);
-    });
+    })
 
-    it('Should move focus from the element with higher tabindex that was focused when the trap was created.', async () => {
+    it('Should move focus from the element with higher tabindex that was focused when the trap was created.', () => {
         const container = document.body.appendChild(document.createElement('div'));
         const child1 = container.appendChild(document.createElement('div'));
         const child2 = container.appendChild(document.createElement('div'));
@@ -3206,7 +3306,7 @@ describe('focusTrap()', () => {
         child4.focus();
 
         inRoot(() => focusTrap(container));
-        await vitest.runAllTimersAsync();
+        flushMicrotasks();
 
         expect(isFocused(child4)).toBe(true);
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -3217,7 +3317,7 @@ describe('focusTrap()', () => {
         expect(isFocused(child3)).toBe(true);
     });
 
-    it('Should preserve tabindex order when moving focus through elements.', async () => {
+    it('Should preserve tabindex order when moving focus through elements.', () => {
         const container = document.body.appendChild(document.createElement('div'));
         const child1 = container.appendChild(document.createElement('div'));
         const child2 = container.appendChild(document.createElement('div'));
@@ -3236,7 +3336,7 @@ describe('focusTrap()', () => {
         child1.focus();
 
         inRoot(() => focusTrap(container));
-        await vitest.runAllTimersAsync();
+        flushMicrotasks();
 
         expect(isFocused(child1)).toBe(true);
         container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
@@ -3252,20 +3352,18 @@ describe('focusTrap()', () => {
 describe('focusAutoCapture()', () => {
     beforeAll(() => {
         manualEffectsMode = false;
-        vitest.useFakeTimers({ toFake: ['queueMicrotask'] });
     });
     afterAll(() => {
-        vitest.runAllTicks();
         manualEffectsMode = true;
-        vitest.useRealTimers();
     });
 
     it('Should focus the element after it is mounted.', () => {
+        flushMicrotasks();
         const root = document.body.appendChild(document.createElement('div'));
         const TestComponent = () => <div ref={focusAutoCapture} tabIndex={0} id="item"></div>;
 
         render(() => <TestComponent/>, root);
-        vitest.runAllTicks();
+        flushMicrotasks();
 
         expect(getFocusedElement()).toBe(document.getElementById('item'));
     });
@@ -3358,4 +3456,4 @@ describe('focusAutoCapture()', () => {
         expect(getFocusedElement()).toBe(div0);
 
     });
-})
+});

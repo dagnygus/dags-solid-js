@@ -740,14 +740,6 @@ describe('Observers', () => {
                     }
                 }
 
-                function assertCollections(a: ArrayLike<any>, b: ArrayLike<any>): void {
-                    expect(a.length).toBe(b.length);
-
-                    for (let i = 0; i < a.length; i++) {
-                        expect(a[i]).toBe(b[i])
-                    }
-                }
-
                 beforeEach(() => {
                     disableShadowDomScanning = observersModule.disableShadowDomScanning;
                     enableScanning = observersModule._enableScanning;
@@ -801,7 +793,7 @@ describe('Observers', () => {
                     expect(latestRecords!.length).toBe(1);
                     expect(latestRecords![0].type).toBe('shadowDiscover');
                     expect(latestRecords![0].target).toBe(child);
-                    assertCollections(latestRecords![0].addedNodes, [ child.shadowRoot ]);
+                    expect(latestRecords![0].addedNodes).toBeEach([ child.shadowRoot ]);
                 });
 
                 it('Should scan for shadow roots concurrently for added nodes.', async () => {
@@ -823,16 +815,16 @@ describe('Observers', () => {
                     flushMicrotasks();
                     expect(latestRecords).not.toBeNull();
                     expect(latestRecords!.length).toBe(1);
-                    assertCollections(latestRecords![0].addedNodes, [ child1, child2 ]);
+                    expect(latestRecords![0].addedNodes).toBeEach([ child1, child2 ]);
 
                     advanceTime = false;
                     flushImmediateSet();
                     flushMicrotasks();
                     expect(latestRecords!.length).toBe(2);
                     expect(latestRecords!.map((r) => r.type)).toEqual([ 'shadowDiscover', 'shadowDiscover' ]);
-                    assertCollections(latestRecords!.map((r) => r.target), [ child1, child2 ]);
-                    assertCollections(latestRecords![0].addedNodes, [ child1.shadowRoot ]);
-                    assertCollections(latestRecords![1].addedNodes, [ child2.shadowRoot ]);
+                    expect(latestRecords!.map((r) => r.target)).toBeEach([ child1, child2 ]);
+                    expect(latestRecords![0].addedNodes).toBeEach([ child1.shadowRoot ]);
+                    expect(latestRecords![1].addedNodes).toBeEach([ child2.shadowRoot ]);
                 });
 
                 it('Should not scan for shadow roots concurrently in a document if scanning is disabled.', async () => {
@@ -875,7 +867,7 @@ describe('Observers', () => {
                     flushMicrotasks();
                     expect(latestRecords).not.toBeNull();
                     expect(latestRecords!.length).toBe(1);
-                    assertCollections(latestRecords![0].addedNodes, [ child1, child2 ]);
+                    expect(latestRecords![0].addedNodes).toBeEach([ child1, child2 ])
                     expect(pendingImmediateSet.length).toBe(0);
                 });
 
@@ -1326,16 +1318,16 @@ describe('Observers', () => {
 
                 child2.setAttribute('dummy-attr1', 'dummy-val1');
                 await wait();
-                expect(latestRecord.targets).toEqual([ child2 ]);
+                expect(latestRecord.targets).toBeEach([ child2 ]);
                 expect(latestRecord.attributeNames).toEqual([ 'dummy-attr1' ]);
-                expect(latestRecord.attributeOwners).toEqual([ child2 ]);
+                expect(latestRecord.attributeOwners).toBeEach([ child2 ]);
                 expect(latestRecord.attributeNamespaces?.length).toBe(1);
 
                 grandchild1.setAttribute('dummy-attr2', 'dummy-val2');
                 await wait();
-                expect(latestRecord.targets).toEqual([ grandchild1 ]);
+                expect(latestRecord.targets).toBeEach([ grandchild1 ]);
                 expect(latestRecord.attributeNames).toEqual([ 'dummy-attr2' ]);
-                expect(latestRecord.attributeOwners).toEqual([ grandchild1 ]);
+                expect(latestRecord.attributeOwners).toBeEach([ grandchild1 ]);
                 expect(latestRecord.attributeNamespaces?.length).toBe(1);
 
                 grandchild3.setAttribute('dummy-attr3', 'dummy-val3');
@@ -1344,9 +1336,9 @@ describe('Observers', () => {
                 grandchild4.setAttribute('dummy-attr6', 'dummy-val6');
                 child2.setAttribute('dummy-attr7', 'dummy-val7');
                 await wait();
-                expect(latestRecord.targets).toEqual([ grandchild3, child1, grandchild2, grandchild4, child2 ]);
+                expect(latestRecord.targets).toBeEach([ grandchild3, child1, grandchild2, grandchild4, child2 ]);
                 expect(latestRecord.attributeNames).toEqual([ 'dummy-attr3', 'dummy-attr4', 'dummy-attr5', 'dummy-attr6', 'dummy-attr7'  ]);
-                expect(latestRecord.attributeOwners).toEqual([ grandchild3, child1, grandchild2, grandchild4, child2 ]);
+                expect(latestRecord.attributeOwners).toBeEach([ grandchild3, child1, grandchild2, grandchild4, child2 ]);
                 expect(latestRecord.attributeNamespaces?.length).toBe(5);
             });
 
@@ -1381,7 +1373,7 @@ describe('Observers', () => {
                 expect(latestRecord.childListChange).toBe(true);
                 expect(latestRecord.attributeChange).toBe(false);
                 expect(latestRecord.characterDataChange).toBe(false);
-                expect(latestRecord.addedNodes).toEqual([ textNodeA ]);
+                expect(latestRecord.addedNodes).toBeEach([ textNodeA ]);
                 expect(latestRecord.targets).toEqual([ grandchild1 ]);
                 
                 const span1 = document.createElement('span');
@@ -1391,8 +1383,8 @@ describe('Observers', () => {
                 expect(latestRecord.childListChange).toBe(true);
                 expect(latestRecord.attributeChange).toBe(false);
                 expect(latestRecord.characterDataChange).toBe(false);
-                expect(latestRecord.addedNodes).toEqual([ span1, span2 ]);
-                expect(latestRecord.targets).toEqual([ grandchild2 ]);
+                expect(latestRecord.addedNodes).toBeEach([ span1, span2 ]);
+                expect(latestRecord.targets).toBeEach([ grandchild2 ]);
 
                 const span3 = document.createElement('span');
                 grandchild3.insertAdjacentElement('afterend', span3);
@@ -1400,8 +1392,8 @@ describe('Observers', () => {
                 expect(latestRecord.childListChange).toBe(true)
                 expect(latestRecord.attributeChange).toBe(false)
                 expect(latestRecord.characterDataChange).toBe(false);
-                expect(latestRecord.addedNodes).toEqual([ span3 ]);
-                expect(latestRecord.targets).toEqual([ child2 ]);
+                expect(latestRecord.addedNodes).toBeEach([ span3 ]);
+                expect(latestRecord.targets).toBeEach([ child2 ]);
 
                 const span4 = grandchild3.appendChild(document.createElement('spam'));
                 const span5 = child1.appendChild(document.createElement('spam'));
@@ -1412,8 +1404,8 @@ describe('Observers', () => {
                 expect(latestRecord.childListChange).toBe(true)
                 expect(latestRecord.attributeChange).toBe(false)
                 expect(latestRecord.characterDataChange).toBe(false);
-                expect(latestRecord.addedNodes).toEqual([ span4, span5, span6, span7, span8 ]);
-                expect(latestRecord.targets).toEqual([ grandchild3, child1, grandchild2, grandchild4, child2 ]);
+                expect(latestRecord.addedNodes).toBeEach([ span4, span5, span6, span7, span8 ]);
+                expect(latestRecord.targets).toBeEach([ grandchild3, child1, grandchild2, grandchild4, child2 ]);
             });
 
             it('Should batch all character data changes into to a single record.', async () => {
@@ -1454,14 +1446,14 @@ describe('Observers', () => {
                 expect(latestRecord.characterDataChange).toBe(true);
                 expect(latestRecord.childListChange).toBe(false);
                 expect(latestRecord.attributeChange).toBe(false);
-                expect(latestRecord.targets).toEqual([ grandchildText1 ]);
+                expect(latestRecord.targets).toBeEach([ grandchildText1 ]);
 
                 childText2.textContent = 'B'
                 await wait();
                 expect(latestRecord.characterDataChange).toBe(true);
                 expect(latestRecord.childListChange).toBe(false);
                 expect(latestRecord.attributeChange).toBe(false);
-                expect(latestRecord.targets).toEqual([ childText2 ]);
+                expect(latestRecord.targets).toBeEach([ childText2 ]);
 
                 grandchildText3.textContent = 'C';
                 childText1.textContent = 'D';
@@ -1473,7 +1465,7 @@ describe('Observers', () => {
                 expect(latestRecord.characterDataChange).toBe(true);
                 expect(latestRecord.childListChange).toBe(false);
                 expect(latestRecord.attributeChange).toBe(false);
-                expect(latestRecord.targets).toEqual([ grandchildText3, childText1, grandchildText2, grandchildText4, childText1 ]);
+                expect(latestRecord.targets).toBeEach([ grandchildText3, childText1, grandchildText2, grandchildText4, childText1 ]);
             });
 
             it('Should batch all changes into to a single record.', async () => {
@@ -1506,7 +1498,7 @@ describe('Observers', () => {
                 expect(latestRecord.characterDataChange).toBe(true);
                 expect(latestRecord.childListChange).toBe(true);
                 expect(latestRecord.attributeChange).toBe(false);
-                expect(latestRecord.targets).toEqual([ textNode, child2 ]);
+                expect(latestRecord.targets).toBeEach([ textNode, child2 ]);
 
                 textNode.textContent = 'B';
                 child3.setAttribute('dummy-attr1', 'dummy-val1');
@@ -1514,7 +1506,7 @@ describe('Observers', () => {
                 expect(latestRecord.characterDataChange).toBe(true);
                 expect(latestRecord.childListChange).toBe(false);
                 expect(latestRecord.attributeChange).toBe(true);
-                expect(latestRecord.targets).toEqual([ textNode, child3 ]);
+                expect(latestRecord.targets).toBeEach([ textNode, child3 ]);
 
                 child2.appendChild(document.createElement('span'));
                 child3.setAttribute('dummy-attr2', 'dummy-val2');
@@ -1522,7 +1514,7 @@ describe('Observers', () => {
                 expect(latestRecord.characterDataChange).toBe(false);
                 expect(latestRecord.childListChange).toBe(true);
                 expect(latestRecord.attributeChange).toBe(true);
-                expect(latestRecord.targets).toEqual([ child2, child3 ]);
+                expect(latestRecord.targets).toBeEach([ child2, child3 ]);
 
                 textNode.textContent = 'C';
                 child2.appendChild(document.createElement('span'));
@@ -1531,7 +1523,7 @@ describe('Observers', () => {
                 expect(latestRecord.characterDataChange).toBe(true);
                 expect(latestRecord.childListChange).toBe(true);
                 expect(latestRecord.attributeChange).toBe(true);
-                expect(latestRecord.targets).toEqual([ textNode, child2, child3 ]);
+                expect(latestRecord.targets).toBeEach([ textNode, child2, child3 ]);
 
             });
 
@@ -2297,7 +2289,7 @@ describe('Observers', () => {
 
                 createRoot(() => {
                     entry1 = observerResizing(() => null!);
-                    entry2 = observerResizing({ target: () => null });
+                    entry2 = observerResizing({ target: () => null! });
                 });
 
                 assertNoPendingEffects();

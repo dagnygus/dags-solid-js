@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 import babel from "@rollup/plugin-babel";
 //@ts-expect-error
 import solid from "babel-preset-solid";
+import { join } from 'node:path'
 
 export default defineConfig({
   plugins: [
@@ -24,5 +25,6 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     include: ['**/*.spec.ts', '**/*.spec.tsx' ],
+    setupFiles: join(__dirname, 'test-setup.ts')
   }
 });

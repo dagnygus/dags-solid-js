@@ -1,11 +1,17 @@
-import { Accessor, createComputed, createEffect, createMemo, createSignal, getOwner, onCleanup, onMount, Signal } from "solid-js";
+/**
+ * @license
+ * Copyright (c) 2026 dags-solid-cdk contributors.
+ * Licensed under the MIT License.
+ */
+import { Accessor, createMemo, createSignal, getOwner, onCleanup, onMount, Signal } from "solid-js";
 import { _cancelTask, _createTaskObject, _scheduleAsapTask, _Task, } from "../../internals/schedulers";
 import { normalizePassiveListenerOptions } from "../../platform/platform";
 import { isDev } from "solid-js/web";
-import { _assertIsElement, _assertIsElementWithFocus, _assertIsInOwningContext, _assertIsOptionalBoolean } from "../../internals/common-assertions";
+import { _assertIsElement, _assertIsElementWithFocus, _assertIsInOwningContext, _assertIsOneOf, _assertIsOptionalBoolean } from "../../internals/common-assertions";
 import { CdkBatchedMutationRecord, observeBatchedMutations, disableShadowDomScanning } from "../../observers/observers";
 import { createAsapEffect, createLazyMemo } from "../../signals/signals";
 import { addDelegatedEventListener } from "../../event-delegation/event-delegation";
+import { _createElementIterator, _ElementIterator } from "../../internals/utils";
 
 /**
  * Represents a DOM element that supports programmatic focus.
@@ -26,12 +32,6 @@ export interface FocusableElement extends Element {
 interface _PotentialTabbable {
     element: FocusableElement;
     priority: number;
-}
-
-interface _CustomNodeIterator {
-    nativeIterator: NodeIterator
-    delegate: _CustomNodeIterator | null;
-    nextNode(): FocusableElement | null;
 }
 
 interface _ElementStackRef {
@@ -354,7 +354,7 @@ export function monitorFocusOrigin(elementGetter: () => Element, checkDescendant
 export function monitorFocusOrigin(target: Element | (() => Element), checkDescendants?: boolean): Accessor<'program' | 'keyboard' | 'pointer' | undefined>;
 /** @internal */
 export function monitorFocusOrigin(target: Element | (() => Element), checkDescendants?: boolean, caller?: Function): Accessor<'program' | 'keyboard' | 'pointer' | undefined>;
-export function monitorFocusOrigin(target: any, checkDescendants: boolean = false, caller: Function = monitorFocusOrigin): Accessor<'program' | 'keyboard' | 'pointer' | undefined> {
+export function monitorFocusOrigin(target: Element | (() => any), checkDescendants: boolean = false, caller: Function = monitorFocusOrigin): Accessor<'program' | 'keyboard' | 'pointer' | undefined> {
     if (__IS_SERVER__) { return () => undefined; }
     isDev && _assertIsValidArgument(
         target,
@@ -362,26 +362,31 @@ export function monitorFocusOrigin(target: any, checkDescendants: boolean = fals
         caller === monitorFocusOrigin
     ) && _assertIsOptionalBoolean(
         checkDescendants,
-        'monitorFocus(): Invalid second argument! Expected a boolean or nothing.'
+        'monitorFocusOrigin(): Invalid second argument! Expected a boolean or nothing.'
     );
 
-    let returnVal: any
-    let element = target instanceof Element ? target : (returnVal = target()) instanceof Element ? returnVal : null;
-
-    isDev && element && _assertIsValidArgument(element, caller, caller === monitorFocusOrigin);
+    let localTarget: Element | null = null;
+    if (target instanceof Element) {
+        localTarget = target
+    } else {
+        const value = target();
+        if (value instanceof Element) {
+            localTarget = value;
+        }
+    }
     
-    if (element) {
-        const origin = _monitorFocus(element, checkDescendants);
+    if (localTarget) {
+        const origin = _monitorFocus(localTarget, checkDescendants);
         return () => origin();
     } else {
-        isDev && !getOwner() && _assertIsValidArgument(element, caller, caller === monitorFocusOrigin)
+        isDev && !getOwner() && _assertIsValidArgument(localTarget, caller, caller === monitorFocusOrigin);
         let onMountSignal: Signal<boolean> | null = createSignal(false);
         let origin: Accessor<'program' | 'keyboard' | 'pointer' | undefined> | null;
         
         onMount(() => {
-            element = target() as Element;
-            isDev && _assertIsValidArgument(element, caller, caller === monitorFocusOrigin);
-            origin = _monitorFocus(element, checkDescendants);
+            const localTarget = (target as (() => any))();
+            isDev && _assertIsValidArgument(localTarget, caller, caller === monitorFocusOrigin);
+            origin = _monitorFocus(localTarget, checkDescendants);
             onMountSignal![1](true);
             onMountSignal = null;
         });
@@ -453,17 +458,17 @@ export function focusVia(target: Element, origin:  'program' | 'keyboard' | 'poi
     if (__IS_SERVER__) {
         throw new Error('focusVia(): This function cannot be used in a server environment!');
     }
-    if (isDev) {
-        if (!(target instanceof Element)) {
-            throw new Error('focusVia(): Invalid first argument! Expected an Element instance.');
-        }
-        if (!('focus' in target && typeof target.focus === 'function')) {
-            throw new Error('focusVia(): Provided target does not implement the focus() method.');
-        }
-        if (!['program', 'keyboard', 'pointer'].includes(origin)) {
-            throw new Error('focusVia(): Invalid second argument! Expected one of ["program", "keyboard", "pointer"].');
-        }
-    }
+    isDev && _assertIsElement(
+        target,
+        'focusVia(): Invalid first argument! Expected an Element instance.'
+    ) && _assertIsElementWithFocus(
+        target,
+        'focusVia(): Provided target does not implement the focus() method.'
+    ) && _assertIsOneOf(
+        origin,
+        ['program', 'keyboard', 'pointer'],
+        'focusVia(): Invalid second argument! Expected one of ["program", "keyboard", "pointer"].'
+    );
 
     if (isFocused(target)) { return false; }
 
@@ -599,7 +604,7 @@ export function observeHasFocusedElement(elementGetter: () => Element): Accessor
 export function observeHasFocusedElement(target: Element | (() => Element)): Accessor<boolean>;
 export function observeHasFocusedElement(target: Element | (() => Element)): Accessor<boolean> {
     if (__IS_SERVER__) { return () => false; }
-    return _observeFocus(target, false, hasFocusedElement, observeHasFocusedElement);
+    return _observeFocus(target, true, hasFocusedElement, observeHasFocusedElement);
 }
 
 function _observeFocus(target: Element | (() => Element), observeDescendants: boolean, predicate: (el: Element) => boolean, caller: Function): Accessor<boolean> {
@@ -637,69 +642,34 @@ function _isDisabled(target: FocusableElement): boolean {
     return _isNativeFocusable(target) ? target.disabled || target.matches(':disabled') : target instanceof HTMLOptionElement || target.ariaDisabled === 'true';
 }
 
-function _isInert(focusTrapHost: Node, target: Element | null): boolean {
-    while(target instanceof HTMLElement) {
-        if (target === focusTrapHost || target.inert) { return target.inert; }
-        if (target.parentNode instanceof ShadowRoot) {
-            target = target.parentNode.host;
-        } else {
-            target = target.parentElement;
-        }
-    }
-    return false;
-}
-
 function _isPotentialTabbableOrHasShadow(node: Element): boolean {
     return (
+        node.shadowRoot !== null ||
         ('tabIndex' in node && typeof node.tabIndex === 'number' && node.tabIndex > -1) ||
-        (node instanceof HTMLElement && (node.isContentEditable || node.shadowRoot !== null))
+        node instanceof HTMLElement && node.isContentEditable
     );
 }
 
-function _createNodeIterator(target: Node): _CustomNodeIterator {
-    return {
-        nativeIterator: document.createNodeIterator(
-            target,
-            NodeFilter.SHOW_ELEMENT,
-            (node) => {
-                if (
-                    node.isConnected &&
-                    _isFocusable(node) &&
-                    !_isInert(target, node) &&
-                    !_isDisabled(node) &&
-                    _isPotentialTabbableOrHasShadow(node)
-                ) {
-                    return NodeFilter.FILTER_ACCEPT;
-                }
-                return NodeFilter.FILTER_SKIP;
-            }
-        ),
-        delegate: null,
-        nextNode() {
-            if (this.delegate) {
-                const element = this.delegate.nextNode();
-                if (element) {
-                    return element;
-                } else {
-                    this.delegate = null;
-                }
-            }
-            const element = this.nativeIterator.nextNode() as FocusableElement | null;
-            if (element && element.shadowRoot) {
-                this.delegate = _createNodeIterator(element.shadowRoot);
-            } 
-            return element;
-        },
+/** @internal */
+export function _elementFilter(node: Element): number {
+    if (!node.isConnected || (node instanceof HTMLElement && node.inert)) {
+        return NodeFilter.FILTER_REJECT;
     }
+    if (_isFocusable(node) && !_isDisabled(node) && _isPotentialTabbableOrHasShadow(node)) {
+        return NodeFilter.FILTER_ACCEPT;
+    }
+    return NodeFilter.FILTER_SKIP;
 }
 
 /** @internal */
-export function _eachPotentialTabbable(target: Node, fn: (item: _PotentialTabbable) => void): void {
+export function _eachPotentialTabbable(iterator: _ElementIterator<FocusableElement>, fn: (item: _PotentialTabbable) => void): void {
+    const target = iterator.target;
     if((target instanceof HTMLElement && target.inert) || !target.isConnected) { return; }
-    const it = _createNodeIterator(target);
     let element: FocusableElement | null = null;
+
+    iterator.reset();
     
-    while (element = it.nextNode()) {
+    while (element = iterator.nextElement()) {
         if (element instanceof HTMLElement) {
             let potentialFocusable: _PotentialTabbable | null = null;
 
@@ -801,8 +771,8 @@ export function focusTrap(element: Element): void {
     const isConnectedSource = createLazyMemo(disposalOwner, () => {
         docMutationRecordSource();
         return element.isConnected;
-    })
-    
+    });
+    const iterator = _createElementIterator<FocusableElement>(element, _elementFilter);
     let items: _PotentialTabbable[] | null = null;
     let focusedIndex = -1;
     let mutationRecord: CdkBatchedMutationRecord | null = null;
@@ -826,7 +796,7 @@ export function focusTrap(element: Element): void {
         ) {
             mutationRecord = newRecord;
             items = [];
-            _eachPotentialTabbable(element, (callback ??= (tabbable) => {
+            _eachPotentialTabbable(iterator, (callback ??= (tabbable) => {
                 if (items!.length) {
                     if (tabbable.priority <= items![items!.length - 1].priority){
                         if (isFocused(tabbable.element)) { 
@@ -886,7 +856,7 @@ export function focusTrap(element: Element): void {
                     items.splice(index, 1);
                     if (focusedIndex === index) {
                         focusedIndex = -1;
-                        currentFocused = null!
+                        currentFocused = null!;
                     } else if (index < focusedIndex) {
                         focusedIndex--;
                     }
@@ -899,7 +869,7 @@ export function focusTrap(element: Element): void {
         if (currentFocused !== newFocusedEl) {
             currentFocused = newFocusedEl;
             if (currentFocused === null) {
-                focusedIndex = -1
+                focusedIndex = -1;
             } else {
                 focusedIndex = items.findIndex((tabbable) => tabbable.element === currentFocused);
             }
@@ -922,9 +892,17 @@ export function focusTrap(element: Element): void {
         let index = focusedIndex;
         
         while (true) {
-            if (++index === items.length) {
+            if (e.shiftKey) {
+                index--;
+            } else {
+                index++;
+            }
+            if (index === items.length) {
                 if (focusedIndex === -1) { return; }
                 index = 0;
+            } else if (index < 0) {
+                if (focusedIndex === -1) { return; }
+                index = items.length - 1;
             }
             if (index === focusedIndex) { return; }
             const el = items[index].element;
@@ -954,7 +932,7 @@ export function focusTrap(element: Element): void {
  * @param element The element to focus and keep as the active focus target.
  *
  * @throws If called in a server environment.
- * @throws If no owning reactive context is available.
+ * @throws If no owning context is available.
  * @throws If the provided value is not an Element.
  * @throws If the element does not implement the `focus()` method.
  */

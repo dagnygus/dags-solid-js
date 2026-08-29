@@ -1,3 +1,9 @@
+/**
+ * @license
+ * Copyright (c) 2026 dags-solid-cdk contributors.
+ * Licensed under the MIT License.
+ */
+
 import { vitest, expect } from "vitest";
 
 interface _PendingEnvironmentTask {

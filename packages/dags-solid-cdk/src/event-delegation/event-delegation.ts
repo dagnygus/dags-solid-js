@@ -1,3 +1,8 @@
+/**
+ * @license
+ * Copyright (c) 2026 dags-solid-cdk contributors.
+ * Licensed under the MIT License.
+ */
 import { delegateEvents, isDev } from "solid-js/web";
 import { _assertIsElement, _assertIsFunction, _assertIsOpenShadowRoot, _assertIsString } from "../internals/common-assertions";
 import { _createNotifier, _Notifier } from "../internals/utils";

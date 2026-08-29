@@ -10,6 +10,7 @@ import { Accessor, createComputed, createMemo, createSignal, getOwner, onCleanup
 import { isDev } from "solid-js/web";
 import { _cancelTask, _createTaskObject, _scheduleAsapTask, _scheduleConcurrentTask, _Task } from "../internals/schedulers";
 import { _assertIsInOwningContext } from "../internals/common-assertions";
+import { _createElementIterator } from "../internals/utils";
 
 /**
  * Configuration options for {@link observeResizing}.
@@ -27,7 +28,7 @@ export interface ObserveElementResizingOptions extends ResizeObserverOptions {
      *
      * An error is thrown if no element is available after mounting.
      */
-    target: Element | (() => Element | null | undefined);
+    target: Element | (() => Element);
 
     /**
      * Controls whether the target is currently being observed.
@@ -240,7 +241,7 @@ let _dispatchingMutations = false;
 let _startTime = 0;
 let _scanningDisabled = false;
 
-let _resizableElements: WeakMap<Node, [_SetterList<ResizeObserverEntry | null>, number]> = null!;
+let _resizableElements: WeakMap<Node, [_SetterList<ResizeObserverEntry | null>, number]> | null = null;
 let _resizeObserver: ResizeObserver | null = null;
 
 /** @internal */
@@ -386,40 +387,18 @@ function _createShadowRecord(element: Element): CdkMutationRecord {
     } as CdkMutationRecord)
 }
 
-function _createNodeIterator(target: Document | Element | ShadowRoot): _CustomNodeIterator {
-    return {
-        nativeIterator: document.createNodeIterator(
-            target,
-            NodeFilter.SHOW_ELEMENT,
-            (node) => node instanceof HTMLElement && node.shadowRoot ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
-        ),
-        delegate: null,
-        nextNode() {
-            if (this.delegate) {
-                const element = this.delegate.nextNode();
-                if (element) {
-                    return element;
-                } else {
-                    this.delegate = null;
-                }
-            }
-            const element = this.nativeIterator.nextNode() as Element | null;
-            if (element) {
-                this.delegate = _createNodeIterator(element.shadowRoot!);
-            }
-            return element;
-        },
-    }
+function _elementFilter(element: Element): number {
+    return element.shadowRoot ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
 }
 
-function _aggregateShadows(target: Document | Element): void {
-    const it = _createNodeIterator(target);
+function _aggregateShadows(target: Element): void {
+    const iterator = _createElementIterator(target, _elementFilter);
     const startTime = _dispatchingMutations ? _startTime : performance.now();
     const timeBudget = _dispatchingMutations ? 12 : 4;
 
     let element: Element | null;
 
-    while ((element = it.nextNode()) && performance.now() - startTime < timeBudget) {
+    while ((element = iterator.nextElement()) && performance.now() - startTime < timeBudget) {
         if (_mutableShadowHosts?.has(element) || !element!.isConnected) {
             continue;
         }
@@ -450,7 +429,7 @@ function _aggregateShadows(target: Document | Element): void {
                 if (_dispatchingMutations) { continue; }
                 _scheduleAsapTask(_shadowDiscoverTask!);
 
-            } while ((element = it.nextNode()) && performance.now() - startTime < 4);
+            } while ((element = iterator.nextElement()) && performance.now() - startTime < 4);
 
             if (element) { 
                 _scheduleConcurrentTask(task);
@@ -935,28 +914,33 @@ export function observerMutations(elementGetter: () => Element): Accessor<readon
  */
 export function observerMutations(target: Document | Element | (() => Element)): Accessor<readonly CdkMutationRecord[] | null>;
 /** @internal */
-export function observerMutations(target: any, caller?: Function): Accessor<CdkMutationRecord[] | null>;
-export function observerMutations(target: any, caller: Function = observerMutations): Accessor<readonly CdkMutationRecord[] | null> {
+export function observerMutations(target: Document | Element | (() => any), caller?: Function): Accessor<CdkMutationRecord[] | null>;
+export function observerMutations(target: Document | Element | (() => any), caller: Function = observerMutations): Accessor<readonly CdkMutationRecord[] | null> {
     if (__IS_SERVER__) { return () => null; }
     isDev && _assertValidObservationTarget(target, true, false, caller) && _assertIsInOwningContext(caller);
+    
+    let localTarget: Element | null = null
 
     if (target instanceof Document) {
-        target = target.documentElement;
+        localTarget = target.documentElement;
+    } else if (target instanceof Element) {
+        localTarget = target
+    } else {
+        const value = target();
+        if (value instanceof Element) {
+            localTarget = value;
+        }
     }
-
-    let returnValue: any;
-    let element = target instanceof Element ? target : (returnValue = target()) instanceof Element ? returnValue : null;
-    isDev && element && _assertValidObservationTarget(element, true, false, caller);
     
-    if (element) {
-        return _observeMutations(element);
+    if (localTarget) {
+        return _observeMutations(localTarget);
     } else {
         let onMouthSignal: Signal<boolean> | null = createSignal(false);
         let mutation:  Accessor<readonly CdkMutationRecord[] | null> | null = null
         onMount(() => {
-            element = target() as Element;
-            isDev && _assertValidObservationTarget(element, true, false, caller);
-            mutation = _observeMutations(element);
+            const localTarget = (target as () => Element)() as Element;
+            isDev && _assertValidObservationTarget(localTarget, true, false, caller);
+            mutation = _observeMutations(localTarget);
             onMouthSignal![1](true);
             onMouthSignal = null;
         });
@@ -1072,7 +1056,7 @@ export function observeBatchedMutations(elementGetter: () => Element): Accessor<
  * @see {@link observeMutations}
  */
 export function observeBatchedMutations(target: Document | Element | (() => Element)): Accessor<CdkBatchedMutationRecord | null>;
-export function observeBatchedMutations(target: any): Accessor<CdkBatchedMutationRecord | null> {
+export function observeBatchedMutations(target: Document | Element | (() => any)): Accessor<CdkBatchedMutationRecord | null> {
     if (__IS_SERVER__) { return () => null; }
     const recordsSource = observerMutations(target, observeBatchedMutations)
     
@@ -1122,6 +1106,23 @@ export function observeBatchedMutations(target: any): Accessor<CdkBatchedMutatio
 
         return null
     })
+}
+
+function _initializeResizeObserver(): void {
+    if (_resizeObserver) { return; }
+    _resizableElements = new WeakMap();
+    _resizeObserver = new ResizeObserver((entries) => {
+        if (!_resizableElements) { return; }
+        for (const entry of entries) {
+            const settersRef = _resizableElements.get(entry.target);
+            if (settersRef) {
+                const settersList = settersRef[0];
+                for (let setterRef = settersList.head; setterRef; setterRef = setterRef.next) {
+                    setterRef.setter(entry);
+                }
+            }
+        }
+    });
 }
 
 /**
@@ -1190,50 +1191,46 @@ export function observeResizing(target: Element | (() => Element) | ObserveEleme
     if (__IS_SERVER__) { return () => null; }
     isDev && _assertValidObservationTarget(target, false, true, observeResizing) && _assertIsInOwningContext(observeResizing);
 
-    if (_resizeObserver === null) {
-        _resizableElements = new WeakMap();
-        _resizeObserver = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                const settersRef = _resizableElements.get(entry.target);
-                if (settersRef) {
-                    const settersList = settersRef[0];
-                    for (let setterRef = settersList.head; setterRef; setterRef = setterRef.next) {
-                        setterRef.setter(entry);
-                    }
-                }
-            }
-        });
-    }
-
-    let returnValue: any
-    let element: Element | null | undefined;
-    let elGetter: () => Element | null | undefined;
-    let options: ResizeObserverOptions | undefined;
-    let watch: Accessor<boolean> | null = null;
+    let localTarget: Element | null = null;
+    let targetGetter: (() => any) | undefined
+    let options1: ResizeObserverOptions | undefined;
+    let watch1: Accessor<boolean> | null = null;
 
     if ('target' in target) {
         const { target: _target, observe, ...rest } = target;
-        options = rest;
-        watch = observe || null;
-        element = _target instanceof Element ? _target : (returnValue = _target()) instanceof Element ? returnValue : null;
-        if (!element) { elGetter = _target as any; }
+        options1 = rest;
+        watch1 = observe || null
+        if (_target instanceof Element) {
+            localTarget = _target;
+        } else {
+            const value = _target();
+            if (value instanceof Element) {
+                localTarget = value
+            } else {
+                targetGetter = _target;
+            }
+        }
+    } else if (target instanceof Element) {
+        localTarget = target;
     } else {
-        element = target instanceof Element ? target : (returnValue = target()) instanceof Element ? returnValue : null;
-        if (!element) { elGetter = target as any; }
+        const value = target();
+        if (value instanceof Element) {
+            localTarget = value;
+        } else {
+            targetGetter = target;
+        }
     }
-    isDev && element && _assertValidObservationTarget(element, false, false, observeResizing);
-    
-    if (element) {
-        return _observeResizing(element, watch, options);
+
+    if (localTarget) {
+        return _observeResizing(localTarget, watch1, options1);
     } else {
-        isDev && !getOwner() && _assertValidObservationTarget(element, false, false, observeResizing);
         let onMouthSignal: Signal<boolean> | null = createSignal(false);
         let entry: Accessor<ResizeObserverEntry | null> | null = null;
 
         onMount(() => {
-            element = elGetter()!;
-            isDev && _assertValidObservationTarget(element, false, false, observeResizing);
-            entry = _observeResizing(element, watch, options);
+            const localTarget = targetGetter!();
+            isDev && _assertValidObservationTarget(localTarget, false, false, observeResizing);
+            entry = _observeResizing(localTarget, watch1, options1);
             onMouthSignal![1](true);
             onMouthSignal = null;
         });
@@ -1246,8 +1243,9 @@ export function observeResizing(target: Element | (() => Element) | ObserveEleme
 }
 
 function _observeResizing(element: Element, watch: Accessor<boolean> | null, options?: ResizeObserverOptions): Accessor<ResizeObserverEntry | null> {
-    let settersRef = _resizableElements.get(element);
-    !settersRef && _resizableElements.set(element, (settersRef = [{ head: null, tail: null }, 0]));
+    _initializeResizeObserver();
+    let settersRef = _resizableElements!.get(element);
+    !settersRef && _resizableElements!.set(element, (settersRef = [{ head: null, tail: null }, 0]));
     
     const setterList = settersRef[0];
     const [getter, setter] = createSignal<ResizeObserverEntry | null>(null);
@@ -1275,7 +1273,7 @@ function _observeResizing(element: Element, watch: Accessor<boolean> | null, opt
         const refCount = --settersRef[1];
         if (refCount) { return; }
         _resizeObserver!.unobserve(element);
-        _resizableElements.delete(element);
+        _resizableElements!.delete(element);
     })
     
     return getter;

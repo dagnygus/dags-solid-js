@@ -14,7 +14,8 @@ export default defineConfig(({ mode }) => {
     signals: resolve(__dirname, 'src/signals/signals.ts'),
     platform: resolve(__dirname, 'src/platform/platform.ts'),
     observers: resolve(__dirname, 'src/observers/observers.ts'),
-    eventDelegation: resolve(__dirname, 'src/event-delegation/event-delegation.ts')
+    eventDelegation: resolve(__dirname, 'src/event-delegation/event-delegation.ts'),
+    a11y: resolve(__dirname, 'src/a11y/a11y.ts')
   }
 
   return {

@@ -1,7 +1,12 @@
-import { Accessor, batch, createComputed, createContext, createMemo, createRoot, createSignal, getOwner, onCleanup, Setter, untrack, useContext } from "solid-js";
+/**
+ * @license
+ * Copyright (c) 2026 dags-solid-cdk contributors.
+ * Licensed under the MIT License.
+ */
+import { Accessor, batch, createComputed, createContext, createRoot, createSignal, getOwner, onCleanup, Setter, untrack, useContext } from "solid-js";
 import { _cancelTask, _createTaskObject, _scheduleAsapTask } from "../../internals/schedulers";
 import { isDev } from "solid-js/web";
-import { _assertExpectedNumber, _assertIsAllowedModifierKeysConfig, _assertIsBoolean, _assertIsElement, _assertIsElementWithFocus, _assertIsFalse, _assertIsFalsy, _assertIsFunction, _assertIsInOwningContext, _assertIsNumber, _assertIsObjectExcludingArray, _assertIsOptionalBoolean, _assertIsOptionalNumber, _assertIsOptionalString, _assertIsOptionalTypeaheadConfig, _assertIsOrientationDirection, _assertIsString, _assertIsTrue, _assertIsTruthy } from "../../internals/common-assertions";
+import { _assertExpectedNumber, _assertIsAllowedModifierKeysConfig, _assertIsBoolean, _assertIsElement, _assertIsElementWithFocus, _assertIsFalse, _assertIsFalsy, _assertIsFiniteNumber, _assertIsFunction, _assertIsInOwningContext, _assertIsNotNaN, _assertIsNumber, _assertIsObjectExcludingArray, _assertIsOptionalBoolean, _assertIsOptionalFiniteNumber, _assertIsOptionalNotNaN, _assertIsOptionalNumber, _assertIsOptionalString, _assertIsOptionalTypeaheadConfig, _assertIsOrientationDirection, _assertIsString, _assertIsTrue, _assertIsTruthy } from "../../internals/common-assertions";
 import { observerMutations } from "../../observers/observers";
 import { _createNotifier } from "../../internals/utils";
 import { addDelegatedEventListener } from "../../event-delegation/event-delegation";
@@ -383,7 +388,7 @@ export interface KeyManager {
      * @param listener The listener to invoke.
      * @returns A function that unregisters the listener.
      */
-    onTabOut(listener: (manager: KeyManager) => void): () => void;
+    onTabOut(listener: (manager: KeyManager, event: KeyboardEvent) => void): () => void;
 
     /**
      * Adds an item to the managed list.
@@ -775,14 +780,14 @@ export function useKeyManger(): KeyManager | null {
  * related features.
  *
  * If no accessor has been explicitly provided via
- * {@link ProvideAccessabilityNameAccessor}, the accessor configured on the
+ * {@link AccessabilityNameAccessorProvider}, the accessor configured on the
  * current {@link KeyManager} is returned instead.
  *
  * Returns `null` when neither source is available.
  *
  * @returns The current accessibility name accessor, or `null`.
  * 
- * @see {@link ProvideAccessabilityNameAccessor}
+ * @see {@link AccessabilityNameAccessorProvider}
  */
 export function useAccessibilityNameAccessor(): ((element: Element) => string) | null {
     return useContext(_accNameGetterContext) || useContext(_managerContext)?._getAccName || null;
@@ -808,7 +813,7 @@ export function useAccessibilityNameAccessor(): ((element: Element) => string) |
  * 
  * @see {@link useAccessibilityNameAccessor}
  */
-export function ProvideAccessabilityNameAccessor(props: { accessor: (element: Element) => string, children: any }): any {
+export function AccessabilityNameAccessorProvider(props: { accessor: (element: Element) => string, children: any }): any {
     const { accessor } = props;
     return <_accNameGetterContext.Provider value={accessor} children={props.children}/>
 }
@@ -973,6 +978,12 @@ export function keyManagerBuilder(): KeyManagerBuilder {
                     _assertIsNumber(
                         stepOrHandler,
                         'KeyManagerBuilder.withKeyboardHandler(). Invalid first argument! It must be a number.'
+                    ) && _assertIsNotNaN(
+                        stepOrHandler,
+                        'KeyManagerBuilder.withKeyboardHandler(). Invalid first argument! NaN is not supported.'
+                    ) && _assertIsFiniteNumber(
+                        stepOrHandler,
+                        'KeyManagerBuilder.withKeyboardHandler(). Invalid first argument! Infinite numbers are not supported.'
                     ) && _assertIsFunction(
                         maybeHandler,
                         'KeyManagerBuilder.withKeyboardHandler(). Invalid second argument! It must be a function.'
@@ -1009,6 +1020,12 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             ) && _assertIsOptionalNumber(
                 jumpStep,
                 'KeyManagerBuilder.withHorizontalOrientation(): Invalid second argument! It must be a number or nothing.'
+            ) && _assertIsOptionalNotNaN(
+                jumpStep,
+                'KeyManagerBuilder.withHorizontalOrientation(): Invalid second argument! NaN is not supported.'
+            ) && _assertIsOptionalFiniteNumber(
+                jumpStep,
+                'KeyManagerBuilder.withHorizontalOrientation(): Invalid second argument! Infinite numbers are not supported.'
             );
             if (direction === 'ltr') {
                 config.keyboardHandler = horizontalLtrOrientationKeyboardHandler;
@@ -1027,6 +1044,12 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             ) && _assertIsOptionalNumber(
                 delta,
                 'KeyManagerBuilder.withPageUpDown(): Invalid second argument! It must be a boolean or nothing.'
+            ) && _assertIsOptionalNotNaN(
+                delta,
+                'KeyManagerBuilder.withPageUpDown(): Invalid second argument! NaN is not supported.'
+            ) && _assertIsOptionalFiniteNumber(
+                delta,
+                'KeyManagerBuilder.withPageUpDown(): Invalid second argument! Infinite numbers are not supported.'
             );
             enabled = enabled == null || enabled;
             config.pageUpDownDelta = enabled ? Math.max(1, Math.floor(delta ? delta : 10)) : 0;
@@ -1054,6 +1077,12 @@ export function keyManagerBuilder(): KeyManagerBuilder {
                 '   caseSensitive: boolean,\n' +
                 '   eachWordAsPrefix: boolean\n' +
                 '}'
+            ) && _assertIsOptionalNotNaN(
+                typeaheadConfig?.debounceInterval,
+                'KeyManagerBuilder.withTypeAhead({ debounceInterval }): Invalid argument! NaN is not supported.'
+            ) && _assertIsOptionalFiniteNumber(
+                typeaheadConfig?.debounceInterval,
+                'KeyManagerBuilder.withTypeAhead({ debounceInterval }): Invalid argument! Infinite numbers are not supported.'
             );
             config.typeaheadConfig = {
                 debounceInterval: Math.max(0, Math.floor(typeaheadConfig?.debounceInterval || 200)),
@@ -1074,7 +1103,13 @@ export function keyManagerBuilder(): KeyManagerBuilder {
             ) && _assertIsOptionalNumber(
                 jumpStep,
                 'KeyManagerBuilder.withVerticalOrientation(): Invalid argument! It must be a number or nothing.'
-            )
+            ) && _assertIsOptionalNotNaN(
+                jumpStep,
+                'KeyManagerBuilder.withVerticalOrientation(): Invalid argument! NaN is not supported.'
+            ) && _assertIsOptionalFiniteNumber(
+                jumpStep,
+                'KeyManagerBuilder.withVerticalOrientation(): Invalid argument! Infinite numbers are not supported.'
+            );
             config.keyboardHandler = verticalOrientationKeyboardHandler;
             config.jumpStep = Math.trunc(jumpStep || 0);
             return this;
@@ -1250,7 +1285,13 @@ export class _KeyManagerImpl implements KeyManager {
     set jumpStep(value: number) {
         isDev && _assertIsNumber(
             value,
-            'KeyManager.jumpStep: Failed to assign jumpStep. Expected a number.'
+            'KeyManager.jumpStep: Failed to assign jumpStep! Expected a number.'
+        ) && _assertIsNotNaN(
+            value,
+            'KeyManager.jumpStep: Failed to assign jumpStep! NaN is not supported.'
+        ) && _assertIsFiniteNumber(
+            value,
+            'KeyManager.jumpStep: Failed to assign jumpStep! Infinite numbers are not supported.'
         );
         this._jumpStep = Math.trunc(value);
     }
@@ -1260,6 +1301,16 @@ export class _KeyManagerImpl implements KeyManager {
         return this._typeahead.interval;
     }
     set typeAheadDebounceInterval(value: number) {
+        isDev && _assertIsNumber(
+            value,
+            'KeyManager.typeAheadDebounceInterval: Failed to assign typeAheadDebounceInterval! Expected a number.'
+        ) && _assertIsNotNaN(
+            value,
+            'KeyManager.typeAheadDebounceInterval: Failed to assign typeAheadDebounceInterval! NaN is not supported.'
+        ) && _assertIsFiniteNumber(
+            value,
+            'KeyManager.typeAheadDebounceInterval: Failed to assign typeAheadDebounceInterval! Infinite numbers are not supported.'
+        );
         if (this._typeahead) { this._typeahead.interval = Math.max(1, Math.floor(value)); }
     }
 
@@ -1267,7 +1318,13 @@ export class _KeyManagerImpl implements KeyManager {
     set pageUpAndDownDelta(value: number) {
         isDev && _assertIsNumber(
             value,
-            'KeyManager.pageUpAndDownDelta: Failed to assign jumpStep. Expected a number.'
+            'KeyManager.pageUpAndDownDelta: Failed to assign pageUpAndDownDelta! Expected a number.'
+        ) && _assertIsNotNaN(
+            value,
+            'KeyManager.pageUpAndDownDelta: Failed to assign pageUpAndDownDelta! NaN is not supported.'
+        ) && _assertIsFiniteNumber(
+            value,
+            'KeyManager.pageUpAndDownDelta: Failed to assign pageUpAndDownDelta! Infinite numbers are not supported.'
         );
         if (this._pageUpDownDelta) {
             this._pageUpDownDelta = Math.max(1, Math.floor(value));
@@ -1978,7 +2035,7 @@ export class DOMElementKeyManagerItem<T extends Element = Element> implements Ke
             `${(this as any).constructor.name}.constructor(): The provided element already has a key manager item!`
         ) && _assertIsString(
             this._getAccName(_element),
-            'KeyManagerBuilder.withAccessabilityNameAccessor() or <ProvideAccessibilityNameAccessor>: The return type of provided function must be a string!'
+            'KeyManagerBuilder.withAccessabilityNameAccessor() or <AccessabilityNameAccessorProvider>: The return type of provided function must be a string!'
         ) && _itemBinding.set(_element, this);
 
         this._dispose = createRoot((dispose) => {
@@ -2416,7 +2473,7 @@ class _Typeahead {
 
             isDev && _assertIsString(
                 newBuffer,
-                'ListKeyManager.withTypeAhead(): Invalid reducer return type! Expected a string.'
+                'KeyManagerBuilder.withTypeAhead(): Invalid reducer return type! Expected a string.'
             );
                 
             if (oldBuffer === newBuffer) { return; }
