@@ -140,7 +140,7 @@ beforeAll(() => {
 })
 
 afterEach(() => {
-    Array.from(document.body.children).forEach((node) => node.remove());
+    document.body.replaceChildren();
     flushMicrotasks();
     dispose(true);
     if (microtasks.length) {
@@ -2357,7 +2357,7 @@ describe('observeIsFocused()', () => {
         expect(() => observeIsFocused((() => ({})) as any)).toThrow(errorMessage);
         expect(() => observeIsFocused((() => []) as any)).toThrow(errorMessage);
 
-        expect(() => observeIsFocused(document.createElement('div'))).not.toThrow();
+        expect(() => inRoot(() => observeIsFocused(document.createElement('div')))).not.toThrow();
         expect(() => inRoot(() => observeIsFocused((() => {}) as any))).not.toThrow();
         assertPendingEffectsCount(1);
         discardPendingEffects();
@@ -2365,13 +2365,13 @@ describe('observeIsFocused()', () => {
 
     it('Should not have any pending effects if the element is provided directly.', () => {
         const div = document.body.appendChild(document.createElement('div'));
-        observeIsFocused(div);
+        inRoot(() => observeIsFocused(div));
         assertNoPendingEffects();
     });
 
     it('Should not have any pending effects if the element is provided eagerly.', () => {
         const div = document.body.appendChild(document.createElement('div'));
-        observeIsFocused(() => div);
+        inRoot(() => observeIsFocused(() => div));
         assertNoPendingEffects();
     });
 
@@ -2387,7 +2387,7 @@ describe('observeIsFocused()', () => {
         const log: boolean[] = [];
         const div = document.body.appendChild(document.createElement('div'));
         div.tabIndex = 0;
-        const isFocusedSource = observeIsFocused(div);
+        const isFocusedSource = inRoot(() => observeIsFocused(div));
 
         subscribeEffect(() => log.push(isFocusedSource()));
         fireEffects();
@@ -2408,7 +2408,7 @@ describe('observeIsFocused()', () => {
         const log: boolean[] = [];
         const div = document.body.appendChild(document.createElement('div'));
         div.tabIndex = 0;
-        const isFocusedSource = observeIsFocused(() => div);
+        const isFocusedSource = inRoot(() => observeIsFocused(() => div));
 
         subscribeEffect(() => log.push(isFocusedSource()));
         fireEffects();
@@ -2453,7 +2453,7 @@ describe('observeIsFocused()', () => {
         const parent = document.body.appendChild(document.createElement('div'));
         const child = parent.appendChild(document.createElement('div'));
         child.tabIndex = 0;
-        const isFocusedSource = observeIsFocused(parent);
+        const isFocusedSource = inRoot(() => observeIsFocused(parent));
 
         subscribeEffect(() => log.push(isFocusedSource()));
         fireEffects();
@@ -2475,7 +2475,7 @@ describe('observeIsFocused()', () => {
         const parent = document.body.appendChild(document.createElement('div'));
         const child = parent.appendChild(document.createElement('div'));
         child.tabIndex = 0;
-        const isFocusedSource = observeIsFocused(() => parent);
+        const isFocusedSource = inRoot(() => observeIsFocused(() => parent));
 
         subscribeEffect(() => log.push(isFocusedSource()));
         fireEffects();
@@ -2521,7 +2521,7 @@ describe('observeIsFocused()', () => {
         using spy = vitest.spyOn((globalThis as any), '__IS_SERVER__', 'get').mockImplementation(() => true);
 
         div.tabIndex = 0;
-        const isFocused = observeIsFocused(div);
+        const isFocused = inRoot(() => observeIsFocused(div));
         div.focus();
 
         expect(document.activeElement).toBe(div);
@@ -2558,7 +2558,7 @@ describe('observeHasFocusedElement()', () => {
         expect(() => observeHasFocusedElement((() => ({})) as any)).toThrow(errorMessage);
         expect(() => observeHasFocusedElement((() => []) as any)).toThrow(errorMessage);
 
-        expect(() => observeHasFocusedElement(document.createElement('div'))).not.toThrow();
+        expect(() => inRoot(() => observeHasFocusedElement(document.createElement('div')))).not.toThrow();
         expect(() => inRoot(() => observeHasFocusedElement((() => {}) as any))).not.toThrow();
         assertPendingEffectsCount(1);
         discardPendingEffects();
@@ -2566,13 +2566,13 @@ describe('observeHasFocusedElement()', () => {
 
     it('Should not have any pending effects if the element is provided directly.', () => {
         const div = document.body.appendChild(document.createElement('div'));
-        observeHasFocusedElement(div);
+        inRoot(() => observeHasFocusedElement(div));
         assertNoPendingEffects();
     });
 
     it('Should not have any pending effects if the element is provided eagerly.', () => {
         const div = document.body.appendChild(document.createElement('div'));
-        observeHasFocusedElement(() => div);
+        inRoot(() => observeHasFocusedElement(() => div));
         assertNoPendingEffects();
     });
 
@@ -2588,7 +2588,7 @@ describe('observeHasFocusedElement()', () => {
         const log: boolean[] = [];
         const div = document.body.appendChild(document.createElement('div'));
         div.tabIndex = 0;
-        const hasFocusedElementSource = observeHasFocusedElement(div);
+        const hasFocusedElementSource = inRoot(() => observeHasFocusedElement(div));
 
         subscribeEffect(() => log.push(hasFocusedElementSource()));
         fireEffects();
@@ -2609,7 +2609,7 @@ describe('observeHasFocusedElement()', () => {
         const log: boolean[] = [];
         const div = document.body.appendChild(document.createElement('div'));
         div.tabIndex = 0;
-        const hasFocusedElementSource = observeHasFocusedElement(() => div);
+        const hasFocusedElementSource = inRoot(() => observeHasFocusedElement(() => div));
 
         subscribeEffect(() => log.push(hasFocusedElementSource()));
         fireEffects();
@@ -2654,7 +2654,7 @@ describe('observeHasFocusedElement()', () => {
         const parent = document.body.appendChild(document.createElement('div'));
         const child = parent.appendChild(document.createElement('div'));
         child.tabIndex = 0;
-        const hasFocusedElementSource = observeHasFocusedElement(parent);
+        const hasFocusedElementSource = inRoot(() => observeHasFocusedElement(parent));
 
         subscribeEffect(() => log.push(hasFocusedElementSource()));
         fireEffects();
@@ -2676,7 +2676,7 @@ describe('observeHasFocusedElement()', () => {
         const parent = document.body.appendChild(document.createElement('div'));
         const child = parent.appendChild(document.createElement('div'));
         child.tabIndex = 0;
-        const hasFocusedElementSource = observeHasFocusedElement(() => parent);
+        const hasFocusedElementSource = inRoot(() => observeHasFocusedElement(() => parent));
 
         subscribeEffect(() => log.push(hasFocusedElementSource()));
         fireEffects();
@@ -2722,7 +2722,7 @@ describe('observeHasFocusedElement()', () => {
         using spy = vitest.spyOn((globalThis as any), '__IS_SERVER__', 'get').mockImplementation(() => true);
 
         div.tabIndex = 0;
-        const hasFocusedElement = observeHasFocusedElement(div);
+        const hasFocusedElement = inRoot(() => observeHasFocusedElement(div));
         div.focus();
 
         expect(document.activeElement).toBe(div);

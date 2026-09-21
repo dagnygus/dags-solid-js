@@ -3,7 +3,7 @@
  * Copyright (c) 2026 dags-solid-cdk contributors.
  * Licensed under the MIT License.
  */
-import { Accessor, createEffect, createMemo, createReaction, createRenderEffect, createSignal, EffectFunction, getOwner, MemoOptions, onCleanup, onMount, Owner, runWithOwner, untrack } from "solid-js";
+import { Accessor, createEffect, createMemo, createReaction, createRenderEffect, createSignal, EffectFunction, getOwner, MemoOptions, onCleanup, onMount, runWithOwner } from "solid-js";
 import { _cancelTask, _createTaskObject, _scheduleAnimationFrameTask, _scheduleAsapTask, _scheduleAsyncTask, _schedulePostPaintTask, type _Task } from "../internals/schedulers";
 import { isDev } from "solid-js/web";
 import { _assertIsElement, _assertIsOptionalBoolean, _assertIsOptionalObjectExcludingArray } from "../internals/common-assertions";
@@ -183,7 +183,7 @@ export function createAnimationFrameEffect(effectFn: () => (() => void) | void, 
         const localEffectFn = () => {
             const cleanup = effectFn();
             if (cleanup instanceof Function) {
-                onCleanup(cleanup)
+                onCleanup(cleanup);
             }
         }
         
@@ -384,7 +384,7 @@ export function createAnimationFrameRenderEffect(effectFn: () => (() => void) | 
  * @returns A lazy accessor that initializes the memo on its first read and
  * subsequently returns its current value.
  */
-export function createLazyMemo<Next extends Prev, Prev = Next>(disposalOwner: Owner, fn: EffectFunction<undefined | NoInfer<Prev>, Next>): Accessor<Next>;
+export function createLazyMemo<Next extends Prev, Prev = Next>(disposalOwner: unknown, fn: EffectFunction<undefined | NoInfer<Prev>, Next>): Accessor<Next>;
 /**
  * Creates a lazily initialized memo with an initial value.
  *
@@ -401,8 +401,8 @@ export function createLazyMemo<Next extends Prev, Prev = Next>(disposalOwner: Ow
  * @returns A lazy accessor that initializes the memo on its first read and
  * subsequently returns its current value.
  */
-export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(disposalOwner: Owner, fn: EffectFunction<Init | Prev, Next>, value: Init, options?: MemoOptions<Next>): Accessor<Next>;
-export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(disposalOwner: Owner, fn: EffectFunction<Init | Prev, Next>, value?: Init, options?: MemoOptions<Next>): Accessor<Next> {
+export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(disposalOwner: unknown, fn: EffectFunction<Init | Prev, Next>, value: Init, options?: MemoOptions<Next>): Accessor<Next>;
+export function createLazyMemo<Next extends Prev, Init = Next, Prev = Next>(disposalOwner: any, fn: EffectFunction<Init | Prev, Next>, value?: Init, options?: MemoOptions<Next>): Accessor<Next> {
     let memo: Accessor<Next>;
     return () => (memo ??= runWithOwner(disposalOwner, () => createMemo(fn as any, value, options))!, memo())
 }

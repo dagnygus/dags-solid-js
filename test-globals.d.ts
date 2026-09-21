@@ -1,7 +1,7 @@
 import 'vitest';
 
 declare module 'vitest' {
-    interface Assertion<T extends ArrayLike<any>> {
+    interface Assertion {
         toBeEach: (expected: ArrayLike<any>) => void;
     }
 

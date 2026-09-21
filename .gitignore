@@ -3,3 +3,5 @@ dist
 .vscode
 TODO.txt
 Navigators.txt
+.vitest
+coverage

@@ -4,8 +4,8 @@
  * Licensed under the MIT License.
  */
 import { delegateEvents, isDev } from "solid-js/web";
-import { _assertIsElement, _assertIsFunction, _assertIsOpenShadowRoot, _assertIsString } from "../internals/common-assertions";
-import { _createNotifier, _Notifier } from "../internals/utils";
+import { _assertIsElement, _assertIsFunction, _assertIsString } from "../internals/common-assertions";
+import { _Notifier } from "../internals/utils";
 
 const _listeners = new Map<string, Map<Node, _Notifier<[Event]>>>();
 const _eventTargets = new WeakMap<Event, Node>();
@@ -121,9 +121,6 @@ export function addDelegatedEventListener(target: Element, type: string, listene
     isDev && _assertIsElement(
         target,
         'addDelegatedEventListener(): Invalid first argument! Expected a DOM Element instance.',
-    ) && _assertIsOpenShadowRoot(
-        target.getRootNode(),
-        'addDelegatedEventListener(): Closed Shadow DOM is not supported! Cannot attach a delegated event listener to a closed Shadow DOM.'
     ) && _assertIsString(
         type,
         'addDelegatedEventListener(): Invalid second argument! Expected a string.'
@@ -138,7 +135,7 @@ export function addDelegatedEventListener(target: Element, type: string, listene
 
     if (notifiers === null) {
         document.addEventListener(type, _dispatcher);
-        notifier = _createNotifier();
+        notifier = new _Notifier();
         notifiers = new Map<Element, _Notifier<[Event]>>();
         notifiers.set(target, notifier);
         _listeners.set(type, notifiers);
@@ -148,7 +145,7 @@ export function addDelegatedEventListener(target: Element, type: string, listene
         notifier = notifiers.get(target) || null;
 
         if (notifier === null) {
-            notifier = _createNotifier();
+            notifier = new _Notifier();
             notifiers.set(target, notifier);
         }
     }

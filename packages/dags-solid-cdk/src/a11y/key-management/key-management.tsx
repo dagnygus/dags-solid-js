@@ -8,7 +8,7 @@ import { _cancelTask, _createTaskObject, _scheduleAsapTask } from "../../interna
 import { isDev } from "solid-js/web";
 import { _assertExpectedNumber, _assertIsAllowedModifierKeysConfig, _assertIsBoolean, _assertIsElement, _assertIsElementWithFocus, _assertIsFalse, _assertIsFalsy, _assertIsFiniteNumber, _assertIsFunction, _assertIsInOwningContext, _assertIsNotNaN, _assertIsNumber, _assertIsObjectExcludingArray, _assertIsOptionalBoolean, _assertIsOptionalFiniteNumber, _assertIsOptionalNotNaN, _assertIsOptionalNumber, _assertIsOptionalString, _assertIsOptionalTypeaheadConfig, _assertIsOrientationDirection, _assertIsString, _assertIsTrue, _assertIsTruthy } from "../../internals/common-assertions";
 import { observerMutations } from "../../observers/observers";
-import { _createNotifier } from "../../internals/utils";
+import { _Notifier } from "../../internals/utils";
 import { addDelegatedEventListener } from "../../event-delegation/event-delegation";
 import { FocusableElement, focusVia, isFocused } from "../focus-management/focus-management";
 import { createLazyMemo } from "../../signals/signals";
@@ -1173,9 +1173,9 @@ export class _KeyManagerImpl implements KeyManager {
     private readonly _modifiers: _ModifierKey[] = ['altKey', 'ctrlKey', 'metaKey', 'shiftKey'];
     private readonly _count: Accessor<number>;
     private readonly _setCount: Setter<number>;
-    private readonly _tabOutNotifier = _createNotifier<[KeyManager, KeyboardEvent]>();
-    private readonly _activeItemRemovedNotifier = _createNotifier<[KeyManager]>();
-    private readonly _activeItemDisabledNotifier = _createNotifier<[KeyManager, KeyManagerItem, number]>();
+    private readonly _tabOutNotifier = new _Notifier<[KeyManager, KeyboardEvent]>();
+    private readonly _activeItemRemovedNotifier = new _Notifier<[KeyManager]>();
+    private readonly _activeItemDisabledNotifier = new _Notifier<[KeyManager, KeyManagerItem, number]>();
     readonly _allowedModifierKeys: _ModifierKey[];
     readonly _homeAndEndEnabled: boolean;
     readonly _skipPredicate: (item: KeyManagerItem) => boolean;
@@ -1352,8 +1352,6 @@ export class _KeyManagerImpl implements KeyManager {
             'KeyManager.bind(): Provided element is already bound to some key manager!'
         ) && _containerBinding.set(container, this);
 
-        const keyboardHandler = this._keyboardHandler
-
         this._containerEl = container;
         
         this._removeListener = addDelegatedEventListener<KeyboardEvent>(container, 'keydown', (e) => {
@@ -1367,12 +1365,13 @@ export class _KeyManagerImpl implements KeyManager {
 
             let result: boolean;
             _isInHandlerContext = true;
+            const prevKey = _currentKey
             _currentKey = e.key;
             try {
-                result = keyboardHandler(this, e);
+                result = this._keyboardHandler.call(null, this, e);
             } finally {
                 _isInHandlerContext = false;
-                _currentKey = undefined;
+                _currentKey = prevKey;
             }
             isDev && _assertIsBoolean(
                 result,

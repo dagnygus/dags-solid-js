@@ -1,8 +1,9 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, defaultExclude } from "vitest/config";
 import babel from "@rollup/plugin-babel";
 //@ts-expect-error
 import solid from "babel-preset-solid";
-import { join } from 'node:path'
+import { join } from 'node:path';
+import { playwright } from "@vitest/browser-playwright"
 
 export default defineConfig({
   plugins: [
@@ -22,9 +23,43 @@ export default defineConfig({
     }
   },
   test: {
-    globals: true,
-    environment: "jsdom",
-    include: ['**/*.spec.ts', '**/*.spec.tsx' ],
-    setupFiles: join(__dirname, 'test-setup.ts')
+    projects: [
+      {
+        test: {
+          globals: true,
+          environment: "jsdom",
+          include: [
+            '**/*.spec.ts',
+            '**/*.spec.tsx',
+          ],
+          exclude: [
+            ...defaultExclude,
+            '**/*.browser.spec.ts',
+            '**/*.browser.spec.tsx',
+          ],
+          setupFiles: join(__dirname, 'test-setup.ts')
+        }
+      },
+      {
+        test: {
+          // an example of file based convention,
+          // you don't have to follow it
+          globals: true,
+          include: [
+            '**/*.browser.spec.ts',
+            '**/*.browser.spec.tsx',
+          ],
+          name: 'browser',
+          browser: {
+            enabled: true,
+            provider: playwright(),
+            headless: true,
+            instances: [
+              { browser: 'chromium' },
+            ],
+          },
+        },
+      }
+    ]
   }
 });

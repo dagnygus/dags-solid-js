@@ -163,7 +163,7 @@ function _tryEnqueue(queue: _TaskQueue, task: _Task): boolean {
     if (task.queue) return false;
     task.prev = queue.tail;
 
-    if (queue.tail !== null) {
+    if (queue.tail) {
         queue.tail.next = task;
     } else {
         queue.head = task;

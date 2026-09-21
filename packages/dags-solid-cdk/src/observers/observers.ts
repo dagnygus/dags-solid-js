@@ -202,12 +202,6 @@ export interface _BatchedMutationRecord {
     shadowDiscover: boolean;
 }
 
-interface _CustomNodeIterator {
-    nativeIterator: TreeWalker | NodeIterator
-    delegate: _CustomNodeIterator | null;
-    nextNode(): Element | null;
-}
-
 interface _SetterRef<T> {
     setter: Setter<T>;
     next: _SetterRef<T> | null;

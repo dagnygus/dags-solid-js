@@ -26,10 +26,63 @@ describe('addDelegatedEventListener()', () => {
     }
 
     afterEach(() => {
-        Array.from(document.body.childNodes).forEach((node) => node.remove());
+        document.body.replaceChildren();
         while (disposeBag.length) {
             disposeBag.shift()!();
         }
+    });
+
+    it('Should throw an error if the first argument is not an Element instance.', () => {
+        const errorMessage = 'addDelegatedEventListener(): Invalid first argument! Expected a DOM Element instance.'
+        expect(() => addDelegatedEventListener(0 as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(1 as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener('' as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener('A' as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(false as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(true as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(undefined as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(null as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener({} as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener([] as any, 'click', () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener((() => {}) as any, 'click', () => {})).toThrow(errorMessage);
+
+        expect(() => addDelegatedEventListener(document.body.appendChild(document.createElement('div')), 'click', () => {})).not.toThrow();
+    });
+
+    it('Should throw an error if the second argument is not a string.', () => {
+        const div = document.body.appendChild(document.createElement('div'))
+        const errorMessage = 'addDelegatedEventListener(): Invalid second argument! Expected a string.';
+
+        expect(() => addDelegatedEventListener(div, 0 as any, () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 1 as any, () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, true as any, () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, false as any, () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, undefined as any, () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, null as any, () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, {} as any, () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, [] as any, () => {})).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, (() => {}) as any, () => {})).toThrow(errorMessage);
+
+        expect(() => addDelegatedEventListener(div, '', () => {})).not.toThrow();
+        expect(() => addDelegatedEventListener(div, 'A', () => {})).not.toThrow();
+    });
+
+    it('Should throw an error if the third argument is not a function.', () => {
+        const div = document.body.appendChild(document.createElement('div'))
+        const errorMessage = 'addDelegatedEventListener(): Invalid third argument! Expected a function.';
+
+        expect(() => addDelegatedEventListener(div, 'click', 0 as any)).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 'click', 1 as any)).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 'click', true as any)).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 'click', false as any)).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 'click', '' as any)).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 'click', 'A' as any)).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 'click', {} as any)).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 'click', [] as any)).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 'click', null as any)).toThrow(errorMessage);
+        expect(() => addDelegatedEventListener(div, 'click', undefined as any)).toThrow(errorMessage);
+
+        expect(() => addDelegatedEventListener(div, 'click', () => {})).not.toThrow();
     });
 
     it('Should correctly count references.', () => {

@@ -189,6 +189,12 @@ export function _assertIsElement(target: any, errorMessage: string): true {
 }
 
 /** @internal */
+export function _assertIsHTMLElement(target: any, errorMessage: string): true {
+    if (target instanceof HTMLElement) { return true; }
+    throw new Error(errorMessage);
+}
+
+/** @internal */
 export function _assertIsElementWithFocus(target: any, errorMessage: string): true {
     if (target instanceof Element && 'focus' in target && typeof target.focus === 'function') { return true; }
     throw new Error(errorMessage);

@@ -107,7 +107,7 @@ describe('Key manager', () => {
     afterEach(() => {
         dispose();
         vitest.unstubAllGlobals();
-        Array.from(document.body.childNodes).forEach((n) => n.remove());
+        document.body.replaceChildren();
         if (
             vitest.isMockFunction(window.setTimeout) ||
             vitest.isMockFunction(window.clearTimeout)

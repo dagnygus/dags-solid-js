@@ -124,9 +124,7 @@ describe('Observers', () => {
     let discardPendingEffects: () => void;
 
     afterEach(() => {
-        for (const node of Array.from(document.body.childNodes)) {
-            node.remove();
-        }
+        document.body.replaceChildren();
         _MockResizeObserver.dispose();
         Array.from(document.body.childNodes).forEach((node) => node.remove());
     })

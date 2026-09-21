@@ -1,12 +1,12 @@
-import { _createElementIterator, _createNotifier } from "./utils";
+import { _createElementIterator, _Notifier } from "./utils";
 
 describe('Utils', () => {
 
-    describe('_createNotifier()', () => {
-        
+    describe('class _Notifier', () => {
+
         it('Should notify all listeners.', () => {
             const log: string[] = [];
-            const notifier = _createNotifier();
+            const notifier = new _Notifier();
 
             notifier.add(() => log.push('A'));
             notifier.add(() => log.push('B'));
@@ -21,11 +21,11 @@ describe('Utils', () => {
 
         it('Should not notify unregistered listener.', () => {
             const log: string[] = [];
-            const notifier = _createNotifier();
+            const notifier = new _Notifier();
 
-            notifier.add(() => log.push('A'))
-            const unregister = notifier.add(() => log.push('B'))
-            notifier.add(() => log.push('C'))
+            notifier.add(() => log.push('A'));
+            const unregister = notifier.add(() => log.push('B'));
+            notifier.add(() => log.push('C'));
 
             notifier.notify();
             expect(log).toEqual([ 'A', 'B', 'C' ]);
@@ -35,15 +35,15 @@ describe('Utils', () => {
             expect(log).toEqual([ 'A', 'C' ]);
         });
 
-        it('Should notify all listeners despise of error.', () => {
+        it('Should notify all listeners despite an error.', () => {
             const log: string[] = [];
-            const notifier = _createNotifier();
+            const notifier = new _Notifier();
 
-            notifier.add(() => log.push('A'))
+            notifier.add(() => log.push('A'));
             notifier.add(() => {
                 log.push('B');
                 throw new Error();
-            })
+            });
             notifier.add(() => log.push('C'));
 
             expect(() => notifier.notify()).toThrow();
@@ -55,13 +55,13 @@ describe('Utils', () => {
 
         it('Should notify all listeners even if current executing listener is removing it self from the notifier.', () => {
             const log: string[] = [];
-            const notifier = _createNotifier();
+            const notifier = new _Notifier();
 
-            notifier.add(() => log.push('A'))
+            notifier.add(() => log.push('A'));
             const unregister = notifier.add(() => {
                 unregister();
                 log.push('B');
-            })
+            });
             notifier.add(() => log.push('C'))
 
             notifier.notify();
@@ -73,14 +73,14 @@ describe('Utils', () => {
 
         it('Should notify all listeners even if current executing listener is removing previous listener.', () => {
             const log: string[] = [];
-            const notifier = _createNotifier();
+            const notifier = new _Notifier();
 
-            const unregister = notifier.add(() => log.push('A'))
+            const unregister = notifier.add(() => log.push('A'));
             notifier.add(() => {
                 unregister();
-                log.push('B')
+                log.push('B');
             });
-            notifier.add(() => log.push('C'))
+            notifier.add(() => log.push('C'));
 
             notifier.notify();
             expect(log).toEqual([ 'A', 'B', 'C' ]);
@@ -89,9 +89,23 @@ describe('Utils', () => {
             expect(log).toEqual([ 'B', 'C' ]);
         });
 
-        it('Should pass args to listeners!', () => {
+        it('Should not invoke a listener removed before execution.', () => {
             const log: string[] = [];
-            const notifier = _createNotifier<[...number[]]>();
+            const notifier = new _Notifier();
+
+            notifier.add(() => log.push('A'));
+            const removeB = notifier.add(() => log.push('B'));
+            notifier.add(() => log.push('C'));
+
+            removeB();
+            notifier.notify();
+            
+            expect(log).toEqual([ 'A', 'C' ]);
+        });
+
+        it('Should pass args to listeners.', () => {
+            const log: string[] = [];
+            const notifier = new _Notifier<[...number[]]>()
 
             notifier.add((...args) => {
                 let l = 'A'
@@ -127,7 +141,7 @@ describe('Utils', () => {
 
         it('Should not notify listeners if it is disposed!', () => {
             const log: string[] = [];
-            const notifier = _createNotifier();
+            const notifier = new _Notifier();
 
             notifier.add(() => log.push('A'));
             notifier.add(() => log.push('B'));
@@ -142,7 +156,7 @@ describe('Utils', () => {
         });
 
         test('_Notifier.count() should return the number of listeners.', () => {
-            const notifier = _createNotifier();
+            const notifier = new _Notifier();
 
             expect(notifier.count()).toBe(0);
             const remove1 = notifier.add(() => {});
@@ -170,7 +184,7 @@ describe('Utils', () => {
 
         it('Should immediately stop notifying if args contain only Event instance and stopImmediatePropagation() has been invoked!', () => {
             const log: string[] = [];
-            const notifier = _createNotifier<[Event]>();
+            const notifier = new _Notifier<[Event]>();
 
             notifier.add(() => log.push('A'));
             notifier.add(() => log.push('B'));
@@ -180,7 +194,78 @@ describe('Utils', () => {
             notifier.notify(new Event('Foo'));
 
             expect(log).toEqual([ 'A', 'B', 'C' ]);
-        })
+        });
+
+        it('Should remove a listener added by "addOnce()" after notification.', () => {
+            const log: string[] = [];
+            const notifier = new _Notifier<[string]>();
+            
+            notifier.addOnce((value) => log.push(value));
+
+            expect(log).toEqual([]);
+            notifier.notify('A');
+            expect(log).toEqual([ 'A' ]);
+            notifier.notify('B');
+            expect(log).toEqual([ 'A' ]);
+        });
+
+        it('Should not invoke a listener removed before its execution.', () => {
+            const log: string[] = [];
+            const notifier = new _Notifier();
+
+            notifier.add(() => log.push('A'));
+            notifier.addOnce(() => {
+                log.push('B');
+                removeC();
+            })
+            const removeC = notifier.add(() => log.push('C'));
+
+            notifier.notify();
+            expect(log).toEqual([ 'A', 'B' ]);
+
+            log.splice(0);
+            notifier.notify();
+
+            expect(log).toEqual([ 'A' ]);
+        });
+
+        it('Should not invoke a listener added during notification.', () => {
+            const log: string[] = [];
+            const notifier = new _Notifier();
+
+            notifier.add(() => log.push('A'));
+            notifier.add(() => {
+                log.push('B');
+                notifier.add(() => log.push('C'));
+            });
+
+            notifier.notify();
+            expect(log).toEqual([ 'A', 'B' ]);
+
+            log.splice(0);
+
+            notifier.notify();
+            expect(log).toEqual([ 'A', 'B', 'C' ]);
+
+            log.splice(0);
+
+            notifier.notify();
+            expect(log).toEqual([ 'A', 'B', 'C', 'C' ]);
+        });
+
+        it('Should throw an error when notify() is called during notification.', () => {
+            const log: string[] = [];
+            const errorMessage = 'Cannot notify a notifier while it is already notifying!'
+            const notifier = new _Notifier();
+
+            notifier.add(() => {
+                log.push('A')
+                expect(() => notifier.notify()).toThrow(errorMessage);
+            });
+
+            notifier.notify();
+            expect(log).toEqual([ 'A' ]);
+        });
 
     });
 

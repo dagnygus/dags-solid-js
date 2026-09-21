@@ -56,7 +56,7 @@ vitest.mock(import('./aria'), (importOgModule) => {
 })
 
 afterEach(() => {
-    Array.from(document.body.children).forEach((node) => node.remove());
+    document.body.replaceChildren();
     dispose(true);
     _resetInternals();
 });
