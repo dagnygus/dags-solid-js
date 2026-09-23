@@ -1,0 +1,21 @@
+.container {
+    height: 300%;
+    position: relative;
+}
+
+.target, .overlay {
+    width: 200px;
+    height: 200px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.target {
+    position: absolute;
+    background-color: pink;
+}
+
+.overlay {
+    background-color: lightgreen;
+}

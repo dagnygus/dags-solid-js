@@ -4741,6 +4741,17 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(rect.bottom).toBe(200);
 
         handle.detach();
+        setTargetElementPosition(100, 335)
+        handle.attach();
+        await waitToAnimationFrame();
+        rect = handle.componentContainer!.getBoundingClientRect();
+
+        expect(rect.left).toBe(-100)
+        expect(rect.top).toBe(155);
+        expect(rect.right).toBe(100);
+        expect(rect.bottom).toBe(355);
+
+        handle.detach();
         connection.offsetX = 20;
         connection.offsetY = -20;
         setTargetElementPosition(50, 100);
@@ -4763,6 +4774,16 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(rect.top).toBe(-150);
         expect(rect.right).toBe(200);
         expect(rect.bottom).toBe(50);
+
+        handle.detach();
+        setTargetElementPosition(615, 100);
+        handle.attach();
+        await waitToAnimationFrame();
+        rect = handle.componentContainer!.getBoundingClientRect();
+        expect(rect.left).toBe(435)
+        expect(rect.top).toBe(-100);
+        expect(rect.right).toBe(635);
+        expect(rect.bottom).toBe(100);
 
         handle.detach();
         connection.offsetX = 5;
@@ -4850,7 +4871,6 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(rect.bottom).toBe(200);
 
         handle.detach();
-        handle.detach();
         setTargetElementPosition(1130, 50);
         handle.attach();
         await waitToAnimationFrame();
@@ -4860,6 +4880,17 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(rect.top).toBe(0);
         expect(rect.right).toBe(1380);
         expect(rect.bottom).toBe(200);
+
+        handle.detach();
+        setTargetElementPosition(1130, 335);
+        handle.attach();
+        await waitToAnimationFrame();
+        rect = handle.componentContainer!.getBoundingClientRect();
+
+        expect(rect.left).toBe(1180)
+        expect(rect.top).toBe(155);
+        expect(rect.right).toBe(1380);
+        expect(rect.bottom).toBe(355);
 
         handle.detach();
         connection.offsetX = -20
@@ -4886,6 +4917,18 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(rect.top).toBe(-150);
         expect(rect.right).toBe(1280);
         expect(rect.bottom).toBe(50);
+
+        handle.detach();
+        handle.detach();
+        setTargetElementPosition(615, 100);
+        handle.attach();
+        await waitToAnimationFrame();
+        rect = handle.componentContainer!.getBoundingClientRect();
+
+        expect(rect.left).toBe(645)
+        expect(rect.top).toBe(-100);
+        expect(rect.right).toBe(845);
+        expect(rect.bottom).toBe(100);
 
         handle.detach();
         connection.offsetX = -5
@@ -4983,6 +5026,17 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(rect.bottom).toBe(720);
 
         handle.detach();
+        setTargetElementPosition(1130, 335);
+        handle.attach();
+        await waitToAnimationFrame();
+        rect = handle.componentContainer!.getBoundingClientRect();
+    
+        expect(rect.left).toBe(1180);
+        expect(rect.top).toBe(365);
+        expect(rect.right).toBe(1380);
+        expect(rect.bottom).toBe(565);
+
+        handle.detach();
         connection.offsetX = -20;
         connection.offsetY = 20
         setTargetElementPosition(1180, 570);
@@ -5004,6 +5058,17 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(rect.left).toBe(1080);
         expect(rect.top).toBe(670);
         expect(rect.right).toBe(1280);
+        expect(rect.bottom).toBe(870);
+
+        handle.detach();
+        setTargetElementPosition(615, 620);
+        handle.attach();
+        await waitToAnimationFrame();
+        rect = handle.componentContainer!.getBoundingClientRect();
+
+        expect(rect.left).toBe(645);
+        expect(rect.top).toBe(670);
+        expect(rect.right).toBe(845);
         expect(rect.bottom).toBe(870);
     
         handle.detach();
@@ -5102,6 +5167,17 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(rect.bottom).toBe(720);
 
         handle.detach();
+        setTargetElementPosition(100, 335);
+        handle.attach();
+        await waitToAnimationFrame();
+        rect = handle.componentContainer!.getBoundingClientRect();
+    
+        expect(rect.left).toBe(-100);
+        expect(rect.top).toBe(365);
+        expect(rect.right).toBe(100);
+        expect(rect.bottom).toBe(565);
+
+        handle.detach();
         connection.offsetX = 20;
         connection.offsetY = 20
         setTargetElementPosition(50, 570);
@@ -5123,6 +5199,17 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(rect.left).toBe(0);
         expect(rect.top).toBe(670);
         expect(rect.right).toBe(200);
+        expect(rect.bottom).toBe(870);
+
+        handle.detach();
+        setTargetElementPosition(615, 620);
+        handle.attach();
+        await waitToAnimationFrame();
+        rect = handle.componentContainer!.getBoundingClientRect();
+
+        expect(rect.left).toBe(435);
+        expect(rect.top).toBe(670);
+        expect(rect.right).toBe(635);
         expect(rect.bottom).toBe(870);
     
         handle.detach();

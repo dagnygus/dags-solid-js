@@ -97,6 +97,22 @@
         "require": "./dist/server/a11y/a11y.cjs"
       },
       "default": "./dist/server/a11y/a11y.mjs"
+    },
+    "./overlay": {
+      "types": "./dist/types/overlay/overlay.d.ts",
+      "browser": {
+        "import": "./dist/browser/overlay/overlay.mjs",
+        "require": "./dist/browser/overlay/overlay.cjs"
+      },
+      "node": {
+        "import": "./dist/server/overlay/overlay.mjs",
+        "require": "./dist/server/overlay/overlay.cjs"
+      },
+      "deno": {
+        "import": "./dist/server/overlay/overlay.mjs",
+        "require": "./dist/server/overlay/overlay.cjs"
+      },
+      "default": "./dist/server/overlay/overlay.mjs"
     }
   }
 }

@@ -340,7 +340,9 @@ export function fixedAlignmentStrategy(config: FixedAlignmentStrategyConfig): Po
         overlayElement.style.position = 'fixed';
         overlayElement.style.display = 'flex';
         overlayElement.style.inset = '0';
+        overlayElement.style.pointerEvents = 'none';
         const container = overlayElement.appendChild(document.createElement('div'));
+        container.style.pointerEvents = 'auto';
 
         createAsapRenderEffect(() => {
             let { horizontalAlignment, verticalAlignment, margin } = config;
@@ -369,7 +371,6 @@ export function fixedAlignmentStrategy(config: FixedAlignmentStrategyConfig): Po
             container.style.margin = margin;
             overlayElement.style.justifyContent = horizontalAlignment;
             overlayElement.style.alignItems = verticalAlignment;
-            overlayElement.style.pointerEvents = 'none';
         });
 
         return container;
@@ -779,11 +780,11 @@ export function connectedEdgesPositionStrategy(config: ConnectedEdgesStrategyCon
                     let pushVertical  = false;
 
                     if (overlayEdge === 'top-left' && !(left >= originX && top >= originY)) {
-                        if (left < originX) {
+                        if (overflowX && left < originX) {
                             left = originX;
                             right = left + width;
                         }
-                        if (top < originY) {
+                        if (overflowY && top < originY) {
                             top = originY;
                             bottom = top + height;
                         }
@@ -805,11 +806,11 @@ export function connectedEdgesPositionStrategy(config: ConnectedEdgesStrategyCon
                             pushVertical  = true;
                         }
                     } else if (overlayEdge === 'top-right' && !(right <= originX && top >= originY)) {
-                        if (right > originX) {
+                        if (overflowX && right > originX) {
                             right = originX;
                             left = right - width;
                         }
-                        if (top < originY) {
+                        if (overflowY && top < originY) {
                             top = originY;
                             bottom = top + height;
                         }
@@ -830,11 +831,11 @@ export function connectedEdgesPositionStrategy(config: ConnectedEdgesStrategyCon
                             pushVertical  = true;
                         }
                     } else if (overlayEdge === 'bottom-right' && !(right <= originX && bottom <= originY)) {
-                        if (right > originX) {
+                        if (overflowX && right > originX) {
                             right = originX;
                             left = right - width;
                         }
-                        if (bottom > originY) {
+                        if (overflowY && bottom > originY) {
                             bottom = originY;
                             top = bottom - height;
                         }
@@ -855,11 +856,11 @@ export function connectedEdgesPositionStrategy(config: ConnectedEdgesStrategyCon
                             pushVertical  = true;
                         }
                     } else if (overlayEdge === 'bottom-left' && !(left >= originX && bottom <= originY)) {
-                        if (left < originX) {
+                        if (overflowX && left < originX) {
                             left = originX;
                             right = left + width;
                         }
-                        if (bottom > originY) {
+                        if (overflowY && bottom > originY) {
                             bottom = originY;
                             top = bottom - height;
                         }

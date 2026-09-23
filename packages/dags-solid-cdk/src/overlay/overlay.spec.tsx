@@ -1,5 +1,6 @@
 import { createRoot, createSignal, getOwner, onCleanup, sharedConfig } from 'solid-js';
-import { _getOverlayRoot, _OverlayHandleImpl, _ServerOverlayHandleImpl, createOverlay, useOverlayHandle } from './overlay';
+import { createOverlay } from './overlay';
+import { _OverlayHandleImpl, _ServerOverlayHandleImpl, _getOverlayRoot, useOverlayHandle } from './handle/handle';
 
 const disposeBag: (() => void)[] = [];
 

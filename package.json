@@ -8,6 +8,7 @@
     "build:cdk": "pnpm --filter dags-solid-cdk build",
     "serve:focus_trap": "pnpm --filter focus-trap dev",
     "serve:focus_auto_capture": "pnpm --filter focus-auto-capture dev",
+    "serve:overlay": "pnpm --filter overlay dev",
     "test": "vitest",
     "lint": "oxlint -A all -D no-debugger -D no-unused-vars -W eqeqeq ."
   },

@@ -1,12 +1,26 @@
-import { _OverlayHandleImpl, UnderlyingInteractionStrategy } from "../overlay";
+import { OverlayHandle } from "../overlay";
 import { normalizePassiveListenerOptions } from "../../platform/platform";
 import { isDev } from "solid-js/web";
-import { _assertIsElement, _assertIsHTMLElement } from "../../internals/common-assertions";
+import { _assertIsElement, _assertIsHTMLElement, _assertIsTrue } from "../../internals/common-assertions";
 import { onCleanup } from "solid-js";
+import { _OverlayHandleImpl } from "../handle/handle";
 
-function _assertOVerlayHandle(handle: any, caller: Function): true {
+function _assertIsOverlayHandle(handle: any, caller: Function): true {
     if (handle instanceof _OverlayHandleImpl) { return true }
     throw new Error(`${caller.name}(): Underlying interaction strategy must be executed with an OverlayHandle as its "this" value!`)
+}
+
+function _assertAreValidArguments(thisArg: any, firstArg: any, secondArg: any, caller: Function): true {
+    return _assertIsOverlayHandle(
+        thisArg,
+        caller
+    ) && _assertIsTrue(
+        firstArg instanceof HTMLDivElement,
+        `${caller.name}(): Invalid first argument! Expected an HTMLDivElement instance.`
+    ) && _assertIsHTMLElement(
+        secondArg,
+        `${caller.name}(): Invalid second argument! Expected an HTMLElement instance.`
+    )
 }
 
 /**
@@ -18,22 +32,21 @@ function _assertOVerlayHandle(handle: any, caller: Function): true {
  * 
  * @throws `Error` if used in a server environment.
  */
-export const blockInteractions: UnderlyingInteractionStrategy<any> = function(overlayElement) {
+export function blockInteractions<P extends Record<string, any> | void>(
+    this: OverlayHandle<P> & { componentContainer: null },
+    overlayElement: HTMLDivElement,
+    componentContainer: HTMLElement
+): void {
     if (__IS_SERVER__) {
-        throw new Error('blockInteraction(): This function is not available in a server environment')
+        throw new Error('blockInteractions(): This function is not available in a server environment.');
     }
-    isDev && _assertOVerlayHandle(
-        this,
-        blockInteractions
-    ) && _assertIsHTMLElement(
-        overlayElement,
-        'blockInteraction(): Invalid argument! Expected an HTMLElement instance.'
-    );
+    isDev && _assertAreValidArguments(this, overlayElement, componentContainer, blockInteractions);
 
     let backgroundElement = this.backdrop;
     if (!backgroundElement) {
         backgroundElement = document.createElement('div');
         backgroundElement.style.inset = '0';
+        backgroundElement.style.position = 'fixed';
         overlayElement.insertAdjacentElement('beforebegin', backgroundElement);
     }
 
@@ -41,11 +54,15 @@ export const blockInteractions: UnderlyingInteractionStrategy<any> = function(ov
 
     backgroundElement.addEventListener('wheel', listener);
     backgroundElement.addEventListener('touchmove', listener);
+    overlayElement.addEventListener('wheel', listener);
+    overlayElement.addEventListener('touchmove', listener);
 
-    onCleanup(() => {
-        backgroundElement.removeEventListener('wheel', listener);
-        backgroundElement.removeEventListener('touchmove', listener);
-    });
+    if (this.backdrop) {
+        onCleanup(() => {
+            backgroundElement.removeEventListener('wheel', listener);
+            backgroundElement.removeEventListener('touchmove', listener);
+        });
+    }
 };
 
 /**
@@ -55,23 +72,18 @@ export const blockInteractions: UnderlyingInteractionStrategy<any> = function(ov
  * 
  * @throws `Error` if used in a server environment.
  */
-export const detachOnOutsideClick: UnderlyingInteractionStrategy<any> = function(_, containerElement) {
+export function detachOnOutsideClick<P extends Record<string, any> | void>(
+    this: OverlayHandle<P> & { componentContainer: null },
+    overlayElement: HTMLDivElement,
+    componentContainer: HTMLElement
+): void {
     if (__IS_SERVER__) {
-        throw new Error('detachOnOutsideClick(): This function is not available in a server environment')
+        throw new Error('detachOnOutsideClick(): This function is not available in a server environment.');
     }
-    isDev && _assertOVerlayHandle(
-        this,
-        detachOnOutsideClick
-    ) && _assertIsHTMLElement(
-        _,
-        'detachOnOutsideClick(): Invalid first argument! Expected an HTMLElement instance.'
-    ) && _assertIsElement(
-        containerElement,
-        'detachOnOutsideClick(): Invalid second argument! Expected an Element instance.'
-    );
+    isDev && _assertAreValidArguments(this, overlayElement, componentContainer, detachOnOutsideClick);
 
     const listener = (e: MouseEvent) => {
-        if (containerElement.contains(e.target as Element)) { return; }
+        if (componentContainer.contains(e.target as Element)) { return; }
         this.detach();
     };
 
@@ -90,23 +102,18 @@ export const detachOnOutsideClick: UnderlyingInteractionStrategy<any> = function
  * 
  * @throws `Error` if used in a server environment.
  */
-export const disposeOnOutsideClick: UnderlyingInteractionStrategy<any> = function(_, containerElement) {
+export function disposeOnOutsideClick<P extends Record<string, any> | void>(
+    this: OverlayHandle<P> & { componentContainer: null },
+    overlayElement: HTMLDivElement,
+    componentContainer: HTMLElement
+): void {
     if (__IS_SERVER__) {
-        throw new Error('disposeOnOutsideClick(): This function is not available in a server environment')
+        throw new Error('disposeOnOutsideClick(): This function is not available in a server environment.');
     }
-    isDev && _assertOVerlayHandle(
-        this,
-        disposeOnOutsideClick
-    ) && _assertIsHTMLElement(
-        _,
-        'disposeOnOutsideClick(): Invalid first argument! Expected an HTMLElement instance.'
-    ) && _assertIsElement(
-        containerElement,
-        'disposeOnOutsideClick(): Invalid second argument! Expected an Element instance.'
-    );
+    isDev && _assertAreValidArguments(this, overlayElement, componentContainer, disposeOnOutsideClick);
 
     const listener = (e: MouseEvent) => {
-        if (containerElement.contains(e.target as Element)) { return; }
+        if (componentContainer.contains(e.target as Element)) { return; }
         this.dispose();
     };
 
@@ -127,23 +134,18 @@ export const disposeOnOutsideClick: UnderlyingInteractionStrategy<any> = functio
  * 
  * @throws `Error` if used in a server environment.
  */
-export const detachOnScrollOutside: UnderlyingInteractionStrategy<any> = function(_, containerElement) {
+export function detachOnScrollOutside<P extends Record<string, any> | void>(
+    this: OverlayHandle<P> & { componentContainer: null },
+    overlayElement: HTMLDivElement,
+    componentContainer: HTMLElement
+): void {
     if (__IS_SERVER__) {
-        throw new Error('detachOnScrollOutside(): This function is not available in a server environment')
+        throw new Error('detachOnScrollOutside(): This function is not available in a server environment.');
     }
-    isDev && _assertOVerlayHandle(
-        this,
-        detachOnScrollOutside
-    ) && _assertIsHTMLElement(
-        _,
-        'detachOnScrollOutside(): Invalid first argument! Expected an HTMLElement instance.'
-    ) && _assertIsElement(
-        containerElement,
-        'detachOnScrollOutside(): Invalid second argument! Expected an Element instance.'
-    );
+    isDev && _assertAreValidArguments(this, overlayElement, componentContainer, detachOnScrollOutside);
 
     const listener = (e: Event) => {
-        if (containerElement.contains(e.target as Element)) { return; }
+        if (componentContainer.contains(e.target as Element)) { return; }
         this.detach();
     };
 
@@ -154,6 +156,38 @@ export const detachOnScrollOutside: UnderlyingInteractionStrategy<any> = functio
         document.removeEventListener('scroll', listener, options);
     });
 };
+
+/**
+ * Disposes the overlay when a scroll occurs outside its component container.
+ *
+ * Scroll events originating inside the component container are ignored.
+ * The strategy listens during the capture phase so that scroll events from
+ * scrollable descendants can be observed.
+ * 
+ * @throws `Error` if used in a server environment.
+ */
+export function disposeOnScrollOutside<P extends Record<string, any> | void>(
+    this: OverlayHandle<P> & { componentContainer: null },
+    overlayElement: HTMLDivElement,
+    componentContainer: HTMLElement
+): void {
+    if (__IS_SERVER__) {
+        throw new Error('disposeOnScrollOutside(): This function is not available in a server environment.');
+    }
+    isDev && _assertAreValidArguments(this, overlayElement, componentContainer, disposeOnScrollOutside);
+
+    const listener = (e: Event) => {
+        if (componentContainer.contains(e.target as Element)) { return; }
+        this.dispose();
+    };
+
+    const options =  normalizePassiveListenerOptions({ passive: true, capture: true });
+    document.addEventListener('scroll', listener,  options);
+
+    onCleanup(() => {
+        document.removeEventListener('scroll', listener, options);
+    });
+}
 
 /**
  * Detaches the overlay after it has been disposed and its exit animation
@@ -173,33 +207,27 @@ export const detachOnScrollOutside: UnderlyingInteractionStrategy<any> = functio
  * 
  * @throws `Error` if used in a server environment.
  */
-export const detachAfterDisposeAndAnimation: UnderlyingInteractionStrategy<any> = function(_, containerElement) {
+export function detachAfterDisposeAndAnimation<P extends Record<string, any> | void>(
+    this: OverlayHandle<P> & { componentContainer: null },
+    overlayElement: HTMLDivElement,
+    componentContainer: HTMLElement
+): void {
     if (__IS_SERVER__) {
-        throw new Error('detachAfterDisposeAndAnimation(): This function is not available in a server environment')
+        throw new Error('detachAfterDisposeAndAnimation(): This function is not available in a server environment.');
     }
-    isDev && _assertOVerlayHandle(
-        this,
-        detachAfterDisposeAndAnimation
-    ) && _assertIsHTMLElement(
-        _,
-        'detachAfterDisposeAndAnimation(): Invalid first argument! Expected an HTMLElement instance.'
-    ) && _assertIsElement(
-        containerElement,
-        'detachAfterDisposeAndAnimation(): Invalid second argument! Expected an Element instance.'
-    );
+    isDev && _assertAreValidArguments(this, overlayElement, componentContainer, detachAfterDisposeAndAnimation);
 
     this.onDispose(() => {
         const options = normalizePassiveListenerOptions({ passive: true })
         const listener = (e: Event) => {
-            if (e.target !== containerElement) {
+            if (e.target !== componentContainer) {
                 return;
             }
-            
             this.detach();
         }
-        containerElement.addEventListener('transitionend', listener, options);
-        containerElement.addEventListener('transitioncancel', listener, options);
-        containerElement.addEventListener('animationend', listener, options);
-        containerElement.addEventListener('animationcancel', listener, options);
+        componentContainer.addEventListener('transitionend', listener, options);
+        componentContainer.addEventListener('transitioncancel', listener, options);
+        componentContainer.addEventListener('animationend', listener, options);
+        componentContainer.addEventListener('animationcancel', listener, options);
     });
 }
