@@ -16,7 +16,8 @@ export default defineConfig(({ mode }) => {
     observers: resolve(__dirname, 'src/observers/observers.ts'),
     eventDelegation: resolve(__dirname, 'src/event-delegation/event-delegation.ts'),
     a11y: resolve(__dirname, 'src/a11y/a11y.ts'),
-    overlay: resolve(__dirname, 'src/overlay/overlay.ts')
+    overlay: resolve(__dirname, 'src/overlay/overlay.ts'),
+    mediaQuery: resolve(__dirname, 'src/media-query/media-query.ts')
   }
 
   return {

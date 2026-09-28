@@ -111,7 +111,8 @@ export function addDelegatedEventListener<K extends keyof MathMLElementEventMap>
  * @param listener The callback invoked when the delegated event reaches the target.
  * @returns A function that removes the delegated event listener.
  *
- * @throws Error If the target belongs to a closed Shadow DOM.
+ * @throws `Error` If the target belongs to a closed Shadow DOM.
+ * @throws `Error` if used in a server environment.
  */
 export function addDelegatedEventListener<T extends Event = Event>(target: Element, type: string, listener: (e: T) => void): () => void;
 export function addDelegatedEventListener(target: Element, type: string, listener: (e: Event) => void): () => void {

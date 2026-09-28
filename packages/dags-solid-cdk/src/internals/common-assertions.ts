@@ -28,6 +28,11 @@ export function _assertIsOptionalObjectExcludingArray(target: any, errorMessage:
     throw new Error(errorMessage);
 }
 
+export function _assertIsArray(target: any, errorMessage: string): true {
+    if (Array.isArray(target)) { return true; }
+    throw new Error(errorMessage);
+}
+
 /** @internal */
 export function _assertIsBoolean(target: any, errorMessage: string): true {
     if (typeof target === 'boolean') { return true; }

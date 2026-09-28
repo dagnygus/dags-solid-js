@@ -315,6 +315,7 @@ function _assertIsEdgeConnection(target: any, errorMessage: string): true {
  * vertical alignment and optional margin.
  * @returns A position strategy for positioning and aligning the overlay
  * within the viewport.
+ * @throws `Error` if used in a server environment.
  */
 export function fixedAlignmentStrategy(config: FixedAlignmentStrategyConfig): PositionStrategy {
     if (__IS_SERVER__) {
@@ -392,6 +393,7 @@ export function fixedAlignmentStrategy(config: FixedAlignmentStrategyConfig): Po
  *
  * @param config Configuration used to position the overlay.
  * @returns A position strategy for positioning the overlay at the specified coordinates.
+ * @throws `Error` if used in a server environment.
  */
 export function fixedCoordinateStrategy(config: FixedCoordinateStrategyConfig): PositionStrategy {
     if (__IS_SERVER__) {
@@ -511,6 +513,7 @@ export function fixedCoordinateStrategy(config: FixedCoordinateStrategyConfig): 
  * connections.
  * @returns A positioning strategy that positions the overlay relative to the
  * target element.
+ * @throws `Error` if used in a server environment.
  */
 export function connectedEdgesPositionStrategy(config: StrictConnectedEdgesStrategyConfig): PositionStrategy;
 export function connectedEdgesPositionStrategy(config: ConnectedEdgesStrategyConfig): PositionStrategy {
