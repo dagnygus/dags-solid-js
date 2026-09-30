@@ -4,7 +4,7 @@ import { PositionStrategy } from "../overlay";
 import { observeResizing, observerMutations } from "../../observers/observers";
 import { normalizePassiveListenerOptions } from "../../platform/platform";
 import { isDev } from "solid-js/web";
-import { _assertIsElement, _assertIsFunction, _assertIsNotNaN, _assertIsNumber, _assertIsObjectExcludingArray, _assertIsOneOf, _assertIsOptionalBoolean, _assertIsOptionalFunction, _assertIsOptionalString, _assertIsTrue } from "../../internals/common-assertions";
+import { _assertIsElement, _assertIsFiniteNumber, _assertIsFunction, _assertIsNotNaN, _assertIsNumber, _assertIsObjectExcludingArray, _assertIsOneOf, _assertIsOptionalBoolean, _assertIsOptionalFiniteNumber, _assertIsOptionalFunction, _assertIsOptionalNotNaN, _assertIsOptionalString, _assertIsTrue } from "../../internals/common-assertions";
 
 /**
  * Alignment of an element along an axis.
@@ -268,26 +268,111 @@ export const _validConnections: { [key: string]: string[] } = {
     ]
 }
 
+const _edges = [
+    'top-left',
+    'top-center',
+    'top-right',
+    'center-right',
+    'bottom-right',
+    'bottom-center',
+    'bottom-left',
+    'center-left'
+]
+
 function _assertIsValidConnection(targetEdge: Edge, overlayEdge: Edge, errorMessage: string): true {
     if (_validConnections[targetEdge].includes(overlayEdge)) { return true; }
-    throw new Error(errorMessage)
+    throw new Error(errorMessage);
 }
 
-function _assertIsEdgeConnection(target: any, errorMessage: string): true {
-    if (
-        target !== null &&
-        typeof target === 'object' &&
-        !Array.isArray(target) &&
-        typeof target.targetEdge === 'string' &&
-        typeof target.overlayEdge === 'string' &&
-        (!('offsetX' in target) || target.offsetX == null || typeof target.offsetX === 'number') &&
-        (!('offsetY' in target) || target.offsetY == null || typeof target.offsetY === 'number') &&
-        (!('weight' in target) || target.weight == null || typeof target.weight === 'number')
-    ) {
-        return true;
+function _assertIsEdgeConnection(target: any, index: number): true {
+    // if (
+    //     target !== null &&
+    //     typeof target === 'object' &&
+    //     !Array.isArray(target) &&
+    //     typeof target.targetEdge === 'string' &&
+    //     _edges.includes(target.targetEdge) &&
+    //     typeof target.overlayEdge === 'string' &&
+    //     _edges.includes(target.overlayEdge) &&
+    //     (target.offsetX == null || typeof target.offsetX === 'number') &&
+    //     (target.offsetY == null || typeof target.offsetY === 'number') &&
+    //     (target.weight == null || typeof target.weight === 'number')
+    // ) {
+    //     return true;
+    // }
+
+    let suffix = '';
+    let valid  = true;
+    let isNaN = false;
+    let isInfinite = false
+
+    if (target == null || typeof target !== 'object' || Array.isArray(target)) {
+        valid = false;
+    } else if (typeof target.targetEdge !== 'string' || !_edges.includes(target.targetEdge)) {
+        valid = false;
+        suffix = '.targetEdge';
+    } else if (typeof target.overlayEdge !== 'string' || !_edges.includes(target.overlayEdge)) {
+        valid = false;
+        suffix = '.overlayEdge';
+    } else if (target.offsetX != null && typeof target.offsetX !== 'number') {
+        valid = false;
+        suffix = '.offsetX?';
+    } else if (target.offsetX != null && typeof target.offsetX === 'number') {
+        if (globalThis.isNaN(target.offsetX)) {
+            valid = false;
+            isNaN = true;
+            suffix = '.offsetX?';
+        } else if (!Number.isFinite(target.offsetX)) {
+            valid = false;
+            isInfinite = true;
+            suffix = '.offsetX?';
+        }
+    } else if (target.offsetY != null && typeof target.offsetY !== 'number') {
+        valid = false;
+        suffix = '.offsetY?';
+    } else if (target.offsetY != null && typeof target.offsetY === 'number') {
+        if (globalThis.isNaN(target.offsetY)) {
+            valid = false;
+            isNaN = true;
+            suffix = '.offsetY?';
+        } else if (!Number.isFinite(target.offsetY)) {
+            valid = false;
+            isInfinite = true;
+            suffix = '.offsetY?';
+        }
+    } else if (target.weight != null && typeof target.weight !== 'number') {
+        valid = false;
+        suffix = '.weight?';
+    } else if (target.weight != null && typeof target.weight === 'number') {
+        if (globalThis.isNaN(target.weight)) {
+            valid = false;
+            isNaN = true;
+            suffix = '.weight?';
+        } else if (!Number.isFinite(target.weight)) {
+            valid = false;
+            isInfinite = true;
+            suffix = '.weight?';
+        }
     }
 
-    throw new Error(errorMessage);
+    if (valid) { return true; }
+
+    if (isNaN) {
+        throw new Error(
+            `connectedEdgesPositionStrategy({ connections[${index}]${suffix} }): Invalid edge connection! NaN is not supported.`
+        );
+    }
+
+    if (isInfinite) {
+        throw new Error(
+            `connectedEdgesPositionStrategy({ connections[${index}]${suffix} }): Invalid edge connection! Infinite numbers are not supported.`
+        );
+    }
+
+    throw new Error(
+        `connectedEdgesPositionStrategy({ connections[${index}]${suffix} }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+        'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+        'and optional numeric "offsetX", "offsetY", and "weight" properties.'
+    );
 }
 
 /**
@@ -408,12 +493,18 @@ export function fixedCoordinateStrategy(config: FixedCoordinateStrategyConfig): 
     ) && _assertIsNotNaN(
         config.x,
         'fixedCoordinateStrategy({ x }): Invalid argument! NaN is not supported.'
+    ) && _assertIsFiniteNumber(
+        config.x,
+        'fixedCoordinateStrategy({ x }): Invalid argument! Infinite numbers are not supported.'
     ) && _assertIsNumber(
         config.y,
         'fixedCoordinateStrategy({ y }): Invalid argument! Expected am object with "y" property of type number.'
     ) && _assertIsNotNaN(
         config.y,
         'fixedCoordinateStrategy({ y }): Invalid argument! NaN is not supported.'
+    ) && _assertIsFiniteNumber(
+        config.y,
+        'fixedCoordinateStrategy({ y }): Invalid argument! Infinite numbers are not supported.'
     ) && _assertIsOptionalBoolean(
         config.autoAdjustCorner,
         'fixedCoordinateStrategy({ autoAdjustCorner }): Invalid argument! Expected am object with "autoAdjustCorner" property of type boolean or without it.'
@@ -446,12 +537,18 @@ export function fixedCoordinateStrategy(config: FixedCoordinateStrategyConfig): 
             ) && _assertIsNotNaN(
                 x,
                 'fixedCoordinateStrategy({ x }): Invalid argument! NaN is not supported.'
+            ) && _assertIsFiniteNumber(
+                x,
+                'fixedCoordinateStrategy({ x }): Invalid argument! Infinite numbers are not supported.'
             ) && _assertIsNumber(
                 y,
                 'fixedCoordinateStrategy({ y }): Invalid argument! Expected am object with "y" property of type number.'
             ) && _assertIsNotNaN(
                 y,
                 'fixedCoordinateStrategy({ y }): Invalid argument! NaN is not supported.'
+            ) && _assertIsFiniteNumber(
+                y,
+                'fixedCoordinateStrategy({ y }): Invalid argument! Infinite numbers are not supported.'
             ) && _assertIsOptionalBoolean(
                 autoAdjustCorner,
                 'fixedCoordinateStrategy({ autoAdjustCorner }): Invalid argument! Expected am object with "autoAdjustCorner" property of type boolean or without it.'
@@ -544,15 +641,15 @@ export function connectedEdgesPositionStrategy(config: ConnectedEdgesStrategyCon
 
         const connections = config.connections;
         for (let i = 0; i < connections.length; i++) {
+            const connection = connections[i];
             _assertIsEdgeConnection(
-                connections[i],
-                'connectedEdgesPositionStrategy(): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties,' +
-                ' and optional numeric "offsetX", "offsetY", and "weight" properties.'
+                connection,
+                i
             );
             _assertIsValidConnection(
-                connections[i].targetEdge,
-                connections[i].overlayEdge,
-                `connectedEdgesPositionStrategy({ connections[${i}] }): Invalid edge pair! Following are allowed: ${JSON.stringify(_validConnections)}`
+                connection.targetEdge,
+                connection.overlayEdge,
+                `connectedEdgesPositionStrategy({ connections[${i}] }): Invalid edge pair! Following are allowed: ${JSON.stringify(_validConnections)}.`
             );
         }
     }
@@ -680,12 +777,11 @@ export function connectedEdgesPositionStrategy(config: ConnectedEdgesStrategyCon
 
                 isDev && _assertIsEdgeConnection(
                     currentConnection,
-                    'connectedEdgesPositionStrategy(): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, ' +
-                    'and optional numeric "offsetX", "offsetY", and "weight" properties.'
+                    i
                 ) && _assertIsValidConnection(
                     localTEdge,
                     localOEdge,
-                    `connectedEdgesPositionStrategy({ connections[${i}] }): Invalid edge pair! Following are allowed: ${JSON.stringify(_validConnections)}`
+                    `connectedEdgesPositionStrategy({ connections[${i}] }): Invalid edge pair! Following are allowed: ${JSON.stringify(_validConnections)}.`
                 );
 
                 dashIndex = localTEdge.indexOf('-');

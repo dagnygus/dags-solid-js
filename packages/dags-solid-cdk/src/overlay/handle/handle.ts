@@ -101,7 +101,7 @@ export class _OverlayHandleImpl<P extends Record<string, any> | void> implements
             return;
         }
         this._disposed = false;
-        // We need to escape hydration
+        // We need to escape hydration in case the application is rendered directly into the body.
         if (sharedConfig.context) {
             this._task = _createTaskObject(() => {
                 this._task = null;

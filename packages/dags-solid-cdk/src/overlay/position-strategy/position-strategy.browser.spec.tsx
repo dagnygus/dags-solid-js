@@ -1001,9 +1001,10 @@ describe('fixedCoordinateStrategy()', () => {
         expect(() => fixedCoordinateStrategy({ x: 0 } as any)).toThrow(errorMessage);
     });
 
-    it('Should throw an error if the x property is not a number.', () => {
+    it('Should throw an error if the x property is not a finite number.', () => {
         const errorMessage1 = 'fixedCoordinateStrategy({ x }): Invalid argument! Expected am object with "x" property of type number.';
         const errorMessage2 = 'fixedCoordinateStrategy({ x }): Invalid argument! NaN is not supported.';
+        const errorMessage3 = 'fixedCoordinateStrategy({ x }): Invalid argument! Infinite numbers are not supported.';
 
         expect(() => fixedCoordinateStrategy({ x: '' as any, y: 0 })).toThrow(errorMessage1);
         expect(() => fixedCoordinateStrategy({ x: 'A' as any, y: 0 })).toThrow(errorMessage1);
@@ -1015,14 +1016,17 @@ describe('fixedCoordinateStrategy()', () => {
         expect(() => fixedCoordinateStrategy({ x: [] as any, y: 0 })).toThrow(errorMessage1);
         expect(() => fixedCoordinateStrategy({ x: (() => {}) as any, y: 0 })).toThrow(errorMessage1);
         expect(() => fixedCoordinateStrategy({ x: NaN, y: 0 })).toThrow(errorMessage2);
+        expect(() => fixedCoordinateStrategy({ x: Number.POSITIVE_INFINITY, y: 0 })).toThrow(errorMessage3);
+        expect(() => fixedCoordinateStrategy({ x: Number.NEGATIVE_INFINITY, y: 0 })).toThrow(errorMessage3);
 
         expect(() => fixedCoordinateStrategy({ x: 0, y: 0 })).not.toThrow();
         expect(() => fixedCoordinateStrategy({ x: 1, y: 0 })).not.toThrow();
     });
 
-    it('Should throw an error if the y property is not a number.', () => {
+    it('Should throw an error if the y property is not a finite number.', () => {
         const errorMessage1 = 'fixedCoordinateStrategy({ y }): Invalid argument! Expected am object with "y" property of type number.';
         const errorMessage2 = 'fixedCoordinateStrategy({ y }): Invalid argument! NaN is not supported.';
+        const errorMessage3 = 'fixedCoordinateStrategy({ y }): Invalid argument! Infinite numbers are not supported.';
 
         expect(() => fixedCoordinateStrategy({ y: '' as any, x: 0 })).toThrow(errorMessage1);
         expect(() => fixedCoordinateStrategy({ y: 'A' as any, x: 0 })).toThrow(errorMessage1);
@@ -1034,6 +1038,8 @@ describe('fixedCoordinateStrategy()', () => {
         expect(() => fixedCoordinateStrategy({ y: [] as any, x: 0 })).toThrow(errorMessage1);
         expect(() => fixedCoordinateStrategy({ y: (() => {}) as any, x: 0 })).toThrow(errorMessage1);
         expect(() => fixedCoordinateStrategy({ y: NaN, x: 0 })).toThrow(errorMessage2);
+        expect(() => fixedCoordinateStrategy({ y: Number.POSITIVE_INFINITY, x: 0 })).toThrow(errorMessage3);
+        expect(() => fixedCoordinateStrategy({ y: Number.NEGATIVE_INFINITY, x: 0 })).toThrow(errorMessage3);
 
         expect(() => fixedCoordinateStrategy({ y: 0, x: 0 })).not.toThrow();
         expect(() => fixedCoordinateStrategy({ y: 1, x: 0 })).not.toThrow();
@@ -1669,7 +1675,7 @@ describe('connectedEdgesPositionStrategy()', () => {
     });
 
     it('Should throw an error if an invalid edge pair connection is passed to the configuration.', () => {
-        let errorMessage = `connectedEdgesPositionStrategy({ connections[0] }): Invalid edge pair! Following are allowed: ${JSON.stringify(_validConnections)}`
+        let errorMessage = `connectedEdgesPositionStrategy({ connections[0] }): Invalid edge pair! Following are allowed: ${JSON.stringify(_validConnections)}.`
         const validConnections: EdgeConnection[] = []
 
         function expectWithConnection(targetEdge: Edge, overlayEdge: Edge) {
@@ -1756,7 +1762,176 @@ describe('connectedEdgesPositionStrategy()', () => {
         expectWithConnection('center-left', 'bottom-left').toThrow(errorMessage);
         expectWithConnection('center-left', 'top-center').toThrow(errorMessage);
         expectWithConnection('center-left', 'bottom-center').toThrow(errorMessage);
-    })
+    });
+
+    it('Should throw an error if the connection does not contain a targetEdge property.', () => {
+        const errorMessage =
+            `connectedEdgesPositionStrategy({ connections[0].targetEdge }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.'
+        const connection = { overlayEdge: 'bottom-right' };
+
+        expect(() => connectedEdgesPositionStrategy({ targetGetter: () => targetElement, connections: [connection as any] })).toThrow(errorMessage)
+    });
+
+    it('Should throw an error if the connection\'s targetEdge property is not an edge string.', () => {
+        const errorMessage =
+            `connectedEdgesPositionStrategy({ connections[0].targetEdge }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.'
+        function createConfig(targetEdge: any, ): any {
+            return { targetGetter: () => targetElement, connections: [{ targetEdge, overlayEdge: 'bottom-right' }] };
+        }
+
+        expect(() => connectedEdgesPositionStrategy(createConfig(0))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(1))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(''))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('A'))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(true))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(false))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(undefined))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(null))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig({}))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig([]))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(() => {}))).toThrow(errorMessage);
+
+        expect(() => connectedEdgesPositionStrategy(createConfig('top-left'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('top-center'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('top-right'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('center-right'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('bottom-right'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('bottom-center'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('bottom-left'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('center-left'))).not.toThrow(errorMessage);
+    });
+
+    it('Should throw an error if the connection does not contain a overlayEdge property.', () => {
+        const errorMessage =
+            `connectedEdgesPositionStrategy({ connections[0].overlayEdge }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.'
+        const connection = { targetEdge: 'bottom-right' };
+
+        expect(() => connectedEdgesPositionStrategy({ targetGetter: () => targetElement, connections: [connection as any] })).toThrow(errorMessage)
+    });
+
+    it('Should throw an error if the connection\'s overlayEdge property is not an edge string.', () => {
+        const errorMessage =
+            `connectedEdgesPositionStrategy({ connections[0].overlayEdge }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.';
+        function createConfig(overlayEdge: any, ): any {
+            return { targetGetter: () => targetElement, connections: [{ overlayEdge, targetEdge: 'top-left' }] };
+        }
+
+        expect(() => connectedEdgesPositionStrategy(createConfig(0))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(1))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(''))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('A'))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(true))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(false))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(undefined))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(null))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig({}))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig([]))).toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig(() => {}))).toThrow(errorMessage);
+
+        expect(() => connectedEdgesPositionStrategy(createConfig('top-left'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('top-center'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('top-right'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('center-right'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('bottom-right'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('bottom-center'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('bottom-left'))).not.toThrow(errorMessage);
+        expect(() => connectedEdgesPositionStrategy(createConfig('center-left'))).not.toThrow(errorMessage);
+    });
+
+    it('Should throw an error if the optional connection\'s offsetX is not a finite number.', () => {
+        const errorMessage1 =
+            `connectedEdgesPositionStrategy({ connections[0].offsetX? }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.';
+        const errorMessage2 = 'connectedEdgesPositionStrategy({ connections[0].offsetX? }): Invalid edge connection! NaN is not supported.';
+        const errorMessage3 = 'connectedEdgesPositionStrategy({ connections[0].offsetX? }): Invalid edge connection! Infinite numbers are not supported.';
+        function createConfig(offsetX: any): any {
+            return { targetGetter: () => targetElement, connections: [{ targetEdge: 'top-left', overlayEdge: 'bottom-right', offsetX }] };
+        }
+
+        expect(() => connectedEdgesPositionStrategy(createConfig(''))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig('A'))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(true))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(false))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(false))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig({}))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig([]))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(() => {}))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(NaN))).toThrow(errorMessage2);
+        expect(() => connectedEdgesPositionStrategy(createConfig(Number.POSITIVE_INFINITY))).toThrow(errorMessage3);
+        expect(() => connectedEdgesPositionStrategy(createConfig(Number.NEGATIVE_INFINITY))).toThrow(errorMessage3);
+
+        expect(() => connectedEdgesPositionStrategy(createConfig(undefined))).not.toThrow();
+        expect(() => connectedEdgesPositionStrategy(createConfig(null))).not.toThrow();
+        expect(() => connectedEdgesPositionStrategy(createConfig(0))).not.toThrow();
+        expect(() => connectedEdgesPositionStrategy(createConfig(1))).not.toThrow();
+    });
+
+    it('Should throw an error if the optional connection\'s offsetY is not a finite number.', () => {
+        const errorMessage1 =
+            `connectedEdgesPositionStrategy({ connections[0].offsetY? }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.';
+        const errorMessage2 = 'connectedEdgesPositionStrategy({ connections[0].offsetY? }): Invalid edge connection! NaN is not supported.';
+        const errorMessage3 = 'connectedEdgesPositionStrategy({ connections[0].offsetY? }): Invalid edge connection! Infinite numbers are not supported.';
+        function createConfig(offsetY: any): any {
+            return { targetGetter: () => targetElement, connections: [{ targetEdge: 'top-left', overlayEdge: 'bottom-right', offsetY }] };
+        }
+
+        expect(() => connectedEdgesPositionStrategy(createConfig(''))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig('A'))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(true))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(false))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(false))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig({}))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig([]))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(() => {}))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(NaN))).toThrow(errorMessage2);
+        expect(() => connectedEdgesPositionStrategy(createConfig(Number.POSITIVE_INFINITY))).toThrow(errorMessage3);
+        expect(() => connectedEdgesPositionStrategy(createConfig(Number.NEGATIVE_INFINITY))).toThrow(errorMessage3);
+
+        expect(() => connectedEdgesPositionStrategy(createConfig(undefined))).not.toThrow();
+        expect(() => connectedEdgesPositionStrategy(createConfig(null))).not.toThrow();
+        expect(() => connectedEdgesPositionStrategy(createConfig(0))).not.toThrow();
+        expect(() => connectedEdgesPositionStrategy(createConfig(1))).not.toThrow();
+    });
+
+    it('Should throw an error if the optional connection\'s weight is not a finite number.', () => {
+        const errorMessage1 =
+            `connectedEdgesPositionStrategy({ connections[0].weight? }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.';
+        const errorMessage2 = 'connectedEdgesPositionStrategy({ connections[0].weight? }): Invalid edge connection! NaN is not supported.';
+        const errorMessage3 = 'connectedEdgesPositionStrategy({ connections[0].weight? }): Invalid edge connection! Infinite numbers are not supported.';
+        function createConfig(weight: any): any {
+            return { targetGetter: () => targetElement, connections: [{ targetEdge: 'top-left', overlayEdge: 'bottom-right', weight }] };
+        }
+
+        expect(() => connectedEdgesPositionStrategy(createConfig(''))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig('A'))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(true))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(false))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(false))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig({}))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig([]))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(() => {}))).toThrow(errorMessage1);
+        expect(() => connectedEdgesPositionStrategy(createConfig(NaN))).toThrow(errorMessage2);
+        expect(() => connectedEdgesPositionStrategy(createConfig(Number.POSITIVE_INFINITY))).toThrow(errorMessage3);
+        expect(() => connectedEdgesPositionStrategy(createConfig(Number.NEGATIVE_INFINITY))).toThrow(errorMessage3);
+
+        expect(() => connectedEdgesPositionStrategy(createConfig(undefined))).not.toThrow();
+        expect(() => connectedEdgesPositionStrategy(createConfig(null))).not.toThrow();
+        expect(() => connectedEdgesPositionStrategy(createConfig(0))).not.toThrow();
+        expect(() => connectedEdgesPositionStrategy(createConfig(1))).not.toThrow();
+    });
 
     it('Should position the overlay according to the provided connection to the target\'s top-left edge.', async () => {
         const edgeConnection: EdgeConnection = {
@@ -7648,8 +7823,8 @@ describe('connectedEdgesPositionStrategy()', () => {
         expect(() => flush()).not.toThrow();
     });
 
-    it('Should throw an error when the connections property is change to invalid value', async () => {
-        const errorMessage1 = 'connectedEdgesPositionStrategy({ connections }): Invalid argument! Expected an object with "connections" property of type array.'
+    it('Should throw an error when the connections property is change to invalid value.', async () => {
+        const errorMessage1 = 'connectedEdgesPositionStrategy({ connections }): Invalid argument! Expected an object with "connections" property of type array.';
         const errorMessage2 = 'connectedEdgesPositionStrategy({ connections }): Invalid argument! The "connections" property can not be an empty array.';
         const errorMessage3 = `connectedEdgesPositionStrategy({ connections[0] }): Invalid edge pair! Following are allowed: ${JSON.stringify(_validConnections)}`;
         const errorMessage4 = `connectedEdgesPositionStrategy({ connections[1] }): Invalid edge pair! Following are allowed: ${JSON.stringify(_validConnections)}`;
@@ -7699,5 +7874,367 @@ describe('connectedEdgesPositionStrategy()', () => {
 
         expect(flush.callbacksCount).toBe(1);
         expect(() => flush()).toThrow(errorMessage4);
-    })
+    });
+
+    it('Should throw an error when the connection\'s targetEdge property is change to invalid value.', async () => {
+        const errorMessage =
+            `connectedEdgesPositionStrategy({ connections[0].targetEdge }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.';
+        using flush = installMockRequestAnimationFrame();
+        const [getTargetEdge, setTargetEdge] = createSignal<any>('top-left');
+        const connection: EdgeConnection = {
+            get targetEdge() {
+                return getTargetEdge();
+            },
+            overlayEdge: 'bottom-right'
+        };
+        const handle = inRoot(() => createOverlay({
+            component: () => <></>,
+            positionStrategy: connectedEdgesPositionStrategy({
+                targetGetter: () => targetElement,
+                connections: [connection as any]
+            })
+        }));
+
+        handle.attach();
+        await waitToAnimationFrame(flush);
+        expect(flush.callbacksCount).toBe(0);
+        setTargetEdge(0);
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setTargetEdge(1)).toThrow(errorMessage);
+        expect(() => setTargetEdge('')).toThrow(errorMessage);
+        expect(() => setTargetEdge('A')).toThrow(errorMessage);
+        expect(() => setTargetEdge(true)).toThrow(errorMessage);
+        expect(() => setTargetEdge(false)).toThrow(errorMessage);
+        expect(() => setTargetEdge(undefined)).toThrow(errorMessage);
+        expect(() => setTargetEdge(null)).toThrow(errorMessage);
+        expect(() => setTargetEdge({})).toThrow(errorMessage);
+        expect(() => setTargetEdge([])).toThrow(errorMessage);
+        expect(() => setTargetEdge(() => {})).toThrow(errorMessage);
+
+        expect(() => setTargetEdge('top-left')).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+    });
+
+    it('Should throw an error when the connection\'s overlayEdge property is change to invalid value.', async () => {
+        const errorMessage =
+            `connectedEdgesPositionStrategy({ connections[0].overlayEdge }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.';
+        using flush = installMockRequestAnimationFrame();
+        const [getOverlayEdge, setOverlayEdge] = createSignal<any>('bottom-right');
+        const connection: EdgeConnection = {
+            targetEdge: 'top-left',
+            get overlayEdge() {
+                return getOverlayEdge()
+            }
+        }
+        const handle = inRoot(() => createOverlay({
+            component: () => <></>,
+            positionStrategy: connectedEdgesPositionStrategy({
+                targetGetter: () => targetElement,
+                connections: [connection as any]
+            })
+        }));
+
+        handle.attach();
+        await waitToAnimationFrame(flush);
+        expect(flush.callbacksCount).toBe(0);
+        setOverlayEdge(0);
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setOverlayEdge(1)).toThrow(errorMessage);
+        expect(() => setOverlayEdge('')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('A')).toThrow(errorMessage);
+        expect(() => setOverlayEdge(true)).toThrow(errorMessage);
+        expect(() => setOverlayEdge(false)).toThrow(errorMessage);
+        expect(() => setOverlayEdge(undefined)).toThrow(errorMessage);
+        expect(() => setOverlayEdge(null)).toThrow(errorMessage);
+        expect(() => setOverlayEdge({})).toThrow(errorMessage);
+        expect(() => setOverlayEdge([])).toThrow(errorMessage);
+        expect(() => setOverlayEdge(() => {})).toThrow(errorMessage);
+
+        expect(() => setOverlayEdge('bottom-right')).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+    });
+
+    it('Should throw an error when connection\'s targetEdge and overlayEdge properties are change to an invalid edge pair.', async () => {
+        const errorMessage = `connectedEdgesPositionStrategy({ connections[0] }): Invalid edge pair! Following are allowed: ${JSON.stringify(_validConnections)}.`;
+        using flush = installMockRequestAnimationFrame();
+        const [getTargetEdge, setTargetEdge] = createSignal<any>('top-left');
+        const [getOverlayEdge, setOverlayEdge] = createSignal<any>('bottom-right');
+        const connection: EdgeConnection = {
+            get targetEdge() { return getTargetEdge(); },
+            get overlayEdge() { return getOverlayEdge(); }
+        };
+        const handle = inRoot(() => createOverlay({
+            component: () => <></>,
+            positionStrategy: connectedEdgesPositionStrategy({
+                targetGetter: () => targetElement,
+                connections: [connection as any]
+            })
+        }));
+
+        handle.attach();
+        await waitToAnimationFrame(flush);
+        setOverlayEdge('top-left');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setOverlayEdge('top-center')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('center-left')).toThrow(errorMessage);
+
+        expect(() => setOverlayEdge('top-right')).not.toThrow();
+        setOverlayEdge('center-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('bottom-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('bottom-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('bottom-left');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+
+        setTargetEdge('top-center');
+        setOverlayEdge('center-left');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setOverlayEdge('top-left')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('top-center')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('top-right')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('center-right')).toThrow(errorMessage);
+
+        expect(() => setOverlayEdge('bottom-left')).not.toThrow();
+        setOverlayEdge('bottom-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('bottom-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+
+        setTargetEdge('top-right');
+        setOverlayEdge('top-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setOverlayEdge('top-right')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('center-right')).toThrow(errorMessage);
+
+        expect(() => setOverlayEdge('top-left')).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+        setOverlayEdge('center-left');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('bottom-left');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('bottom-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('bottom-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+
+        setTargetEdge('center-right');
+        setOverlayEdge('top-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setOverlayEdge('top-right')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('center-right')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('bottom-right')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('bottom-center')).toThrow(errorMessage);
+
+        expect(() => setOverlayEdge('bottom-left')).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+        setOverlayEdge('center-left');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('top-left');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+
+        setTargetEdge('bottom-right');
+        setOverlayEdge('center-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setOverlayEdge('bottom-right')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('bottom-center')).toThrow(errorMessage);
+
+        expect(() => setOverlayEdge('bottom-left')).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+        setOverlayEdge('center-left');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow(errorMessage);
+        setOverlayEdge('top-left');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow(errorMessage);
+        setOverlayEdge('top-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow(errorMessage);
+        setOverlayEdge('top-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow(errorMessage);
+
+        setTargetEdge('bottom-center');
+        setOverlayEdge('center-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setOverlayEdge('bottom-right')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('bottom-center')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('bottom-left')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('center-left')).toThrow(errorMessage);
+
+        expect(() => setOverlayEdge('top-left')).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+        setOverlayEdge('top-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('top-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+
+        setTargetEdge('bottom-left');
+        setOverlayEdge('bottom-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setOverlayEdge('bottom-left')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('center-left')).toThrow(errorMessage);
+
+        expect(() => setOverlayEdge('top-left')).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+        setOverlayEdge('top-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow(errorMessage);
+        setOverlayEdge('top-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow(errorMessage);
+        setOverlayEdge('center-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow(errorMessage);
+        setOverlayEdge('bottom-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow(errorMessage);
+
+        setTargetEdge('center-left');
+        setOverlayEdge('bottom-center');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage);
+        expect(() => setOverlayEdge('bottom-left')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('center-left')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('top-left')).toThrow(errorMessage);
+        expect(() => setOverlayEdge('top-center')).toThrow(errorMessage);
+
+        expect(() => setOverlayEdge('top-right')).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+        setOverlayEdge('center-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOverlayEdge('bottom-right');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+    });
+
+    it('Should throw an error if the connection\'s offsetX is change to invalid value.', async () => {
+        const errorMessage1 =
+            `connectedEdgesPositionStrategy({ connections[0].offsetX? }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.';
+        const errorMessage2 = 'connectedEdgesPositionStrategy({ connections[0].offsetX? }): Invalid edge connection! NaN is not supported.';
+        const errorMessage3 = 'connectedEdgesPositionStrategy({ connections[0].offsetX? }): Invalid edge connection! Infinite numbers are not supported.';
+        using flush = installMockRequestAnimationFrame();
+        const [getOffsetX, setOffsetX] = createSignal<any>(0);
+        const connection: EdgeConnection = {
+            targetEdge: 'top-left',
+            overlayEdge: 'bottom-right',
+            get offsetX() { return getOffsetX(); }
+        };
+        const handle = inRoot(() => createOverlay({
+            component: () => <></>,
+            positionStrategy: connectedEdgesPositionStrategy({
+                targetGetter: () => targetElement,
+                connections: [connection as any]
+            })
+        }));
+        handle.attach();
+        await waitToAnimationFrame(flush);
+
+        setOffsetX('');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage1);
+        expect(() => setOffsetX('A')).toThrow(errorMessage1);
+        expect(() => setOffsetX(true)).toThrow(errorMessage1);
+        expect(() => setOffsetX(false)).toThrow(errorMessage1);
+        expect(() => setOffsetX({})).toThrow(errorMessage1);
+        expect(() => setOffsetX([])).toThrow(errorMessage1);
+        expect(() => setOffsetX(() => () => {})).toThrow(errorMessage1);
+        expect(() => setOffsetX(NaN)).toThrow(errorMessage2);
+        expect(() => setOffsetX(Number.POSITIVE_INFINITY)).toThrow(errorMessage3);
+        expect(() => setOffsetX(Number.NEGATIVE_INFINITY)).toThrow(errorMessage3);
+
+        expect(() => setOffsetX(undefined)).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+        setOffsetX(null);
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOffsetX(0);
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOffsetX(1);
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+    });
+
+    it('Should throw an error if the connection\'s offsetY is change to invalid value.', async () => {
+        const errorMessage1 =
+            `connectedEdgesPositionStrategy({ connections[0].offsetY? }): Invalid edge connection! Expected an object with "targetEdge" and "overlayEdge" properties, each set  ` +
+            'to one of [ \'top-left\', \'top-center\', \'top-right\', \'center-right\', \'bottom-right\', \'bottom-center\', \'bottom-left\', \'center-left\' ] ' +
+            'and optional numeric "offsetX", "offsetY", and "weight" properties.';
+        const errorMessage2 = 'connectedEdgesPositionStrategy({ connections[0].offsetY? }): Invalid edge connection! NaN is not supported.';
+        const errorMessage3 = 'connectedEdgesPositionStrategy({ connections[0].offsetY? }): Invalid edge connection! Infinite numbers are not supported.';
+        using flush = installMockRequestAnimationFrame();
+        const [getOffsetY, setOffsetY] = createSignal<any>(0);
+        const connection: EdgeConnection = {
+            targetEdge: 'top-left',
+            overlayEdge: 'bottom-right',
+            get offsetY() { return getOffsetY(); }
+        };
+        const handle = inRoot(() => createOverlay({
+            component: () => <></>,
+            positionStrategy: connectedEdgesPositionStrategy({
+                targetGetter: () => targetElement,
+                connections: [connection as any]
+            })
+        }));
+        handle.attach();
+        await waitToAnimationFrame(flush);
+
+        setOffsetY('');
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).toThrow(errorMessage1);
+        expect(() => setOffsetY('A')).toThrow(errorMessage1);
+        expect(() => setOffsetY(true)).toThrow(errorMessage1);
+        expect(() => setOffsetY(false)).toThrow(errorMessage1);
+        expect(() => setOffsetY({})).toThrow(errorMessage1);
+        expect(() => setOffsetY([])).toThrow(errorMessage1);
+        expect(() => setOffsetY(() => () => {})).toThrow(errorMessage1);
+        expect(() => setOffsetY(NaN)).toThrow(errorMessage2);
+        expect(() => setOffsetY(Number.POSITIVE_INFINITY)).toThrow(errorMessage3);
+        expect(() => setOffsetY(Number.NEGATIVE_INFINITY)).toThrow(errorMessage3);
+
+        expect(() => setOffsetY(undefined)).not.toThrow();
+        expect(flush.callbacksCount).toBe(0);
+        setOffsetY(null);
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOffsetY(0);
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+        setOffsetY(1);
+        expect(flush.callbacksCount).toBe(1);
+        expect(() => flush()).not.toThrow();
+    });
+    
 });
